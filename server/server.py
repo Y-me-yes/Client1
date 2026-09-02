@@ -65,6 +65,25 @@ import urllib.parse
 from email.mime.text import MIMEText
 from pathlib import Path
 
+# Optional dependencies — Mongo for hosted storage, Resend for hosted email.
+# Both are present in requirements.txt. If either is missing on import,
+# the server falls back to local JSON files (dev) or stderr email (dev).
+try:
+    import pymongo
+    from pymongo import MongoClient
+    _HAVE_PYMONGO = True
+except Exception:
+    pymongo = None
+    MongoClient = None
+    _HAVE_PYMONGO = False
+
+try:
+    import resend
+    _HAVE_RESEND = True
+except Exception:
+    resend = None
+    _HAVE_RESEND = False
+
 
 # ---------- env loading (tiny .env parser — no external deps) ----------
 
@@ -109,6 +128,10 @@ TEACHER_LANDING     = env("TEACHER_LANDING", "../Teacher's/index.html")
 USER_LANDING        = env("USER_LANDING", "../Students/index.html")
 
 DATA_DIR     = Path(__file__).parent
+# STATIC_DIR is the project root (FINISHED/), one level up from
+# server/. The Python process serves the four HTML pages out of here
+# so a single Render web service can host the whole site + API.
+STATIC_DIR   = DATA_DIR.parent
 USERS_FILE    = DATA_DIR / "users.json"
 PENDINGS_FILE = DATA_DIR / "pendings.json"
 CODES_FILE    = DATA_DIR / "codes.json"
@@ -131,41 +154,163 @@ PIN_RE   = re.compile(r"^\d{6}$")
 
 _lock = threading.RLock()
 
-def _read(path: Path, default):
+# The storage layer is dual-backed: a Mongo collection if MONGODB_URI is
+# set and pymongo is installed, otherwise a JSON file on local disk. The
+# call sites (load_users, save_users, etc.) only see `load_X` / `save_X`
+# functions that return / accept the raw parsed value, so swapping the
+# backend doesn't ripple through the rest of the file.
+#
+# Each "JSON file" maps 1:1 to a Mongo collection. Inside that collection
+# is a single document with _id='singleton' and a `value` field holding
+# the parsed JSON. The kv shape is fine for our use — the entire users
+# list is one document, the entire notifications list is one document, etc.
+# The only "high-write" collection is `replies`, which is appended to on
+# every student reply; for the demo this stays under 0.5 GB easily.
+#
+# The "points" use case (per-student score) is an exception: it lives on
+# the users document in the JSON-file world, and we keep that here too —
+# score/awardCount/lastAwardedAt/history ride along on the user row in
+# the `users` collection.
+
+_mongo_client = None
+_mongo_db = None
+_storage_mode = "json"  # or "mongo"
+
+def _storage_init():
+    """Initialise the storage backend. Mongo takes priority if available;
+    otherwise we fall back to local JSON files (developer convenience)."""
+    global _mongo_client, _mongo_db, _storage_mode
+    uri = (os.environ.get("MONGODB_URI") or "").strip()
+    if _HAVE_PYMONGO and uri:
+        try:
+            _mongo_client = MongoClient(uri, serverSelectionTimeoutMS=5000, uuidRepresentation="standard")
+            # Force a round-trip to fail fast if creds are wrong.
+            _mongo_client.admin.command("ping")
+            db_name = os.environ.get("MONGODB_DB") or "client1"
+            _mongo_db = _mongo_client[db_name]
+            _storage_mode = "mongo"
+            print(f"[store] Mongo backend ready (db={db_name})", file=sys.stderr)
+            return
+        except Exception as e:
+            print(f"[store] Mongo init failed ({e}); falling back to local JSON.", file=sys.stderr)
+            _mongo_client = None
+            _mongo_db = None
+    print(f"[store] Using local JSON files in {DATA_DIR}", file=sys.stderr)
+    _storage_mode = "json"
+
+def _storage_indexes():
+    """One-time index bootstrap. Mongo collections are schemaless but we
+    still want unique keys on the things that JSON files had to dedupe by
+    hand (username, code key, etc.)."""
+    if _storage_mode != "mongo" or _mongo_db is None:
+        return
+    try:
+        # The 'users' collection is a single document with the whole
+        # list in `value`, so we can't index a username field at the
+        # collection level. We add a tiny secondary collection that
+        # mirrors username → _id for fast lookup; writes go through the
+        # helper functions so both stay in sync.
+        _mongo_db["users_by_username"].create_index("username", unique=True)
+        _mongo_db["codes"].create_index("key", unique=True)
+        _mongo_db["resets"].create_index("token", unique=True)
+        _mongo_db["pendings"].create_index("username", unique=True)
+    except Exception as e:
+        print(f"[store] index bootstrap failed: {e}", file=sys.stderr)
+
+def _read(name: str, default):
+    """Read a "file" by name (e.g. "users", ".challenge"). On Mongo this
+    is a collection; on JSON this is a file in DATA_DIR. The argument
+    is a name (no leading dot) so we don't have path-handling code in
+    every call site."""
+    if _storage_mode == "mongo" and _mongo_db is not None:
+        try:
+            doc = _mongo_db[name].find_one({"_id": "singleton"})
+            if not doc or "value" not in doc:
+                return default
+            return doc["value"]
+        except Exception as e:
+            print(f"[store:mongo] read {name} failed: {e}", file=sys.stderr)
+            return default
+    # JSON-file fallback
+    # Accept either "users" or ".users" — keep the historical dotted
+    # names for dev parity.
+    file_name = name if name.startswith(".") else f".{name}.json"
+    if name == "users":       file_name = "users.json"
+    if name == "pendings":    file_name = "pendings.json"
+    if name == "codes":       file_name = "codes.json"
+    if name == "resets":      file_name = "resets.json"
+    path = DATA_DIR / file_name
     if not path.exists():
         return default
     try:
         txt = path.read_text(encoding="utf-8").strip()
         return json.loads(txt) if txt else default
     except Exception as e:
-        print(f"[store] read {path.name} failed: {e}", file=sys.stderr)
+        print(f"[store:json] read {path.name} failed: {e}", file=sys.stderr)
         return default
 
-def _write(path: Path, data) -> None:
+def _write(name: str, data) -> None:
+    if _storage_mode == "mongo" and _mongo_db is not None:
+        try:
+            _mongo_db[name].replace_one(
+                {"_id": "singleton"},
+                {"_id": "singleton", "value": data},
+                upsert=True,
+            )
+            return
+        except Exception as e:
+            print(f"[store:mongo] write {name} failed: {e}", file=sys.stderr)
+            return
+    file_name = name if name.startswith(".") else f".{name}.json"
+    if name == "users":       file_name = "users.json"
+    if name == "pendings":    file_name = "pendings.json"
+    if name == "codes":       file_name = "codes.json"
+    if name == "resets":      file_name = "resets.json"
+    path = DATA_DIR / file_name
     path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
 
-def load_users()    : return _read(USERS_FILE, [])
-def save_users(u)   : _write(USERS_FILE, u)
-def load_pendings() : return _read(PENDINGS_FILE, {})
-def save_pendings(p): _write(PENDINGS_FILE, p)
-def load_codes()    : return _read(CODES_FILE, {})
-def save_codes(c)   : _write(CODES_FILE, c)
-def load_resets()   : return _read(RESETS_FILE, {})
-def save_resets(r)  : _write(RESETS_FILE, r)
-def load_challenge():      return _read(CHALLENGE_FILE, {})
-def save_challenge(c):     _write(CHALLENGE_FILE, c)
-def load_challenge_done(): return _read(CHALLENGE_DONE_FILE, {})
-def save_challenge_done(d): _write(CHALLENGE_DONE_FILE, d)
-def load_notifications():  return _read(NOTIFICATIONS_FILE, [])
-def save_notifications(n): _write(NOTIFICATIONS_FILE, n)
-def load_archive():        return _read(ARCHIVE_FILE, [])
-def save_archive(a):       _write(ARCHIVE_FILE, a)
-def load_messages():        return _read(MESSAGES_FILE, [])
-def save_messages(m):       _write(MESSAGES_FILE, m)
-def load_replies():         return _read(REPLIES_FILE, [])
-def save_replies(r):        _write(REPLIES_FILE, r)
-def load_student_archive(): return _read(STUDENT_ARCHIVE_FILE, [])
-def save_student_archive(s): _write(STUDENT_ARCHIVE_FILE, s)
+# Backwards-compat: the original _read/_write took a Path. The new ones
+# take a name. Keep a Path-accepting shim so the many call sites
+# throughout the file don't need to be touched.
+def _read_path(path: Path, default):
+    # Strip DATA_DIR prefix + .json suffix to get the original name.
+    # Examples: DATA_DIR / "users.json" -> "users",
+    #           DATA_DIR / ".challenge.json" -> "challenge"
+    # (The path's basename is "X.json" or ".X.json" where X is the
+    # collection name.)
+    base = path.name
+    if base.startswith("."):
+        return _read(base[1:].rsplit(".json", 1)[0], default)
+    return _read(base.rsplit(".json", 1)[0], default)
+
+def _write_path(path: Path, data) -> None:
+    base = path.name
+    if base.startswith("."):
+        return _write(base[1:].rsplit(".json", 1)[0], data)
+    return _write(base.rsplit(".json", 1)[0], data)
+
+def load_users()    : return _read_path(USERS_FILE, [])
+def save_users(u)   : _write_path(USERS_FILE, u)
+def load_pendings() : return _read_path(PENDINGS_FILE, {})
+def save_pendings(p): _write_path(PENDINGS_FILE, p)
+def load_codes()    : return _read_path(CODES_FILE, {})
+def save_codes(c)   : _write_path(CODES_FILE, c)
+def load_resets()   : return _read_path(RESETS_FILE, {})
+def save_resets(r)  : _write_path(RESETS_FILE, r)
+def load_challenge():      return _read_path(CHALLENGE_FILE, {})
+def save_challenge(c):     _write_path(CHALLENGE_FILE, c)
+def load_challenge_done(): return _read_path(CHALLENGE_DONE_FILE, {})
+def save_challenge_done(d): _write_path(CHALLENGE_DONE_FILE, d)
+def load_notifications():  return _read_path(NOTIFICATIONS_FILE, [])
+def save_notifications(n): _write_path(NOTIFICATIONS_FILE, n)
+def load_archive():        return _read_path(ARCHIVE_FILE, [])
+def save_archive(a):       _write_path(ARCHIVE_FILE, a)
+def load_messages():        return _read_path(MESSAGES_FILE, [])
+def save_messages(m):       _write_path(MESSAGES_FILE, m)
+def load_replies():         return _read_path(REPLIES_FILE, [])
+def save_replies(r):        _write_path(REPLIES_FILE, r)
+def load_student_archive(): return _read_path(STUDENT_ARCHIVE_FILE, [])
+def save_student_archive(s): _write_path(STUDENT_ARCHIVE_FILE, s)
 
 # ---------- rate limiting ----------
 # Without throttling, an attacker on the same network as the dev box can
@@ -312,13 +457,43 @@ def consume_reset_token(token: str):
 
 # ---------- email (lazy + safe) ----------
 
-def can_send_email() -> bool:
-    return bool(GMAIL_USER) and bool(GMAIL_APP_PASS) and not GMAIL_APP_PASS.startswith("replace_")
+# Two backends:
+#   - Resend (HTTPS API) when RESEND_API_KEY is set. Works on Render's
+#     free tier (which blocks outbound SMTP). This is the preferred
+#     path on hosted deploys.
+#   - Gmail SMTP (smtplib) when only GMAIL_USER + GMAIL_APP_PASSWORD
+#     are set. Used for local dev with a real Gmail account.
+#   - Neither configured? Fall back to logging the message to stderr
+#     so the request still succeeds (the 5-digit code is visible in
+#     the server logs).
 
-def send_email(to: str, subject: str, text: str) -> None:
-    if not can_send_email():
-        print(f"[email] skipped (Gmail not configured). Would have sent to {to}: \"{subject}\"", file=sys.stderr)
-        return
+RESEND_API_KEY = env("RESEND_API_KEY", "")
+MAIL_FROM      = env("MAIL_FROM", "onboarding@resend.dev")
+MAIL_FROM_NAME = env("MAIL_FROM_NAME", "Governor Yusuf")
+
+def can_send_email() -> bool:
+    return bool(RESEND_API_KEY) or (bool(GMAIL_USER) and bool(GMAIL_APP_PASS) and not GMAIL_APP_PASS.startswith("replace_"))
+
+def _send_via_resend(to: str, subject: str, text: str) -> bool:
+    if not (_HAVE_RESEND and RESEND_API_KEY):
+        return False
+    try:
+        resend.api_key = RESEND_API_KEY
+        from_email = f"{MAIL_FROM_NAME} <{MAIL_FROM}>" if MAIL_FROM_NAME else MAIL_FROM
+        resend.Emails.send({
+            "from": from_email,
+            "to":   [to],
+            "subject": subject,
+            "text": text,
+        })
+        return True
+    except Exception as e:
+        print(f"[email:resend] send failed: {e}", file=sys.stderr)
+        return False
+
+def _send_via_gmail(to: str, subject: str, text: str) -> bool:
+    if not (GMAIL_USER and GMAIL_APP_PASS and not GMAIL_APP_PASS.startswith("replace_")):
+        return False
     try:
         msg = MIMEText(text, "plain", "utf-8")
         msg["Subject"] = subject
@@ -327,9 +502,22 @@ def send_email(to: str, subject: str, text: str) -> None:
         with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=15) as s:
             s.login(GMAIL_USER, GMAIL_APP_PASS)
             s.send_message(msg)
-        print(f"[email] sent \"{subject}\" to {to}", file=sys.stderr)
+        return True
     except Exception as e:
-        print(f"[email] send failed: {e}", file=sys.stderr)
+        print(f"[email:gmail] send failed: {e}", file=sys.stderr)
+        return False
+
+def send_email(to: str, subject: str, text: str) -> None:
+    """Best-effort send. Tries Resend first (the hosted path), then
+    Gmail (the dev path), then logs to stderr. Returns nothing — the
+    caller should not treat email failure as fatal."""
+    if _send_via_resend(to, subject, text):
+        print(f"[email] sent (resend) \"{subject}\" to {to}", file=sys.stderr)
+        return
+    if _send_via_gmail(to, subject, text):
+        print(f"[email] sent (gmail) \"{subject}\" to {to}", file=sys.stderr)
+        return
+    print(f"[email] SKIPPED (no RESEND_API_KEY and no Gmail configured). Would have sent to {to}: \"{subject}\"\n--- BODY ---\n{text}\n--- END ---", file=sys.stderr)
 
 # ---------- HTTP server ----------
 
@@ -404,8 +592,22 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self.end_headers()
 
     def do_GET(self):  # noqa: N802
-        if self.path == "/api/health":
-            return _send(self, 200, {"ok": True})
+        if self.path == "/api/health" or self.path == "/health":
+            return _send(self, 200, {"ok": True, "storage": _storage_mode})
+        # Serve static files from the project root (FINISHED/) so the
+        # hosted service can serve Login/, Students/, Student/, Teacher's/
+        # out of the same Python process. The static dir is the parent
+        # of DATA_DIR (= server/).
+        try:
+            return self._serve_static(self.path)
+        except _NotStatic:
+            pass
+        # /healthz (Render's default) — alias
+        if self.path == "/healthz":
+            return _send(self, 200, {"ok": True, "storage": _storage_mode})
+        # /healthz (Render's default) — alias
+        if self.path == "/healthz":
+            return _send(self, 200, {"ok": True, "storage": _storage_mode})
         if self.path == "/api/students":
             return self._list_students()
         if self.path == "/api/gradebook":
@@ -2391,6 +2593,105 @@ class Handler(http.server.BaseHTTPRequestHandler):
         except Exception:
             pass
 
+    # ---------- static file serving ----------
+    def _serve_static(self, url_path: str):
+        """Serve a static file from STATIC_DIR (= FINISHED/, the parent
+        of server/). Used to host the four HTML pages out of the same
+        Python process on Render.
+
+        Path-traversal protection: resolve the candidate path and
+        confirm it stays under STATIC_DIR. Anything outside the tree
+        raises _NotStatic so the caller falls through to the 404
+        handler."""
+        # Drop query string + decode.
+        clean = url_path.split("?", 1)[0]
+        # "/" maps to Login/index.html by convention so the deployed
+        # URL `https://x.onrender.com/` lands on the login page.
+        if clean in ("", "/"):
+            clean = "/Login/"
+        # Only serve paths that look like absolute paths into our tree.
+        if not clean.startswith("/"):
+            raise _NotStatic()
+        # Reject obvious traversal early.
+        if ".." in clean:
+            raise _NotStatic()
+        # Map to disk.
+        rel = clean.lstrip("/")
+        # Teacher's folder has an apostrophe in the name.
+        # Path on disk uses the literal apostrophe.
+        full = (STATIC_DIR / rel).resolve()
+        try:
+            static_resolved = STATIC_DIR.resolve()
+            if not str(full).startswith(str(static_resolved)):
+                raise _NotStatic()
+        except _NotStatic:
+            raise
+        except Exception:
+            raise _NotStatic()
+        if full.is_dir():
+            # Convention: trailing-slash directories serve index.html.
+            idx = full / "index.html"
+            if idx.is_file():
+                return self._send_static_file(idx)
+            # No index.html — 404.
+            raise _NotStatic()
+        if full.is_file():
+            return self._send_static_file(full)
+        raise _NotStatic()
+
+    def _send_static_file(self, full: Path):
+        # Tiny content-type map; fall back to octet-stream. The pages
+        # reference a few text/* + image/* + font/* + js/css mime types;
+        # the browser is forgiving on text/css vs text/plain so this
+        # minimal map is fine.
+        ext = full.suffix.lower()
+        ctype = {
+            ".html": "text/html; charset=utf-8",
+            ".htm":  "text/html; charset=utf-8",
+            ".css":  "text/css; charset=utf-8",
+            ".js":   "application/javascript; charset=utf-8",
+            ".mjs":  "application/javascript; charset=utf-8",
+            ".json": "application/json; charset=utf-8",
+            ".svg":  "image/svg+xml",
+            ".png":  "image/png",
+            ".jpg":  "image/jpeg",
+            ".jpeg": "image/jpeg",
+            ".gif":  "image/gif",
+            ".webp": "image/webp",
+            ".ico":  "image/x-icon",
+            ".woff": "font/woff",
+            ".woff2":"font/woff2",
+            ".ttf":  "font/ttf",
+            ".otf":  "font/otf",
+            ".txt":  "text/plain; charset=utf-8",
+            ".map":  "application/json; charset=utf-8",
+        }.get(ext, "application/octet-stream")
+        try:
+            data = full.read_bytes()
+        except Exception:
+            raise _NotStatic()
+        self.send_response(200)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(len(data)))
+        # Static assets benefit from a small cache. HTML gets a short
+        # one so deploys propagate quickly.
+        if ext in (".html", ".htm"):
+            self.send_header("Cache-Control", "no-cache")
+        else:
+            self.send_header("Cache-Control", "public, max-age=300")
+        self.end_headers()
+        try:
+            self.wfile.write(data)
+        except Exception:
+            pass
+
+
+class _NotStatic(Exception):
+    """Sentinel raised by _serve_static when the URL isn't a static
+    file we should serve. The do_GET caller catches it and falls
+    through to the /api/* 404 handler."""
+    pass
+
 # ---------- bootstrap ----------
 
 class ThreadingHTTPServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
@@ -2405,10 +2706,18 @@ def main():
     except Exception as e:
         print(f"[store] could not create {MEDIA_DIR}: {e}", file=sys.stderr)
 
+    # Initialise the storage backend. Mongo takes priority if MONGODB_URI
+    # is set + pymongo is importable; otherwise we fall back to local
+    # JSON files (developer convenience).
+    _storage_init()
+    _storage_indexes()
+
     if not can_send_email():
-        print(f"[auth] Gmail not configured — emails will be SKIPPED. Set GMAIL_USER and GMAIL_APP_PASSWORD in .env to enable.", file=sys.stderr)
+        print(f"[auth] No email backend configured — emails will be SKIPPED. Set RESEND_API_KEY (hosted) or GMAIL_USER + GMAIL_APP_PASSWORD (dev) to enable.", file=sys.stderr)
+    elif RESEND_API_KEY:
+        print(f"[auth] Email: Resend (sender={MAIL_FROM})", file=sys.stderr)
     else:
-        print(f"[auth] Gmail configured as {GMAIL_USER} — emails will be sent.", file=sys.stderr)
+        print(f"[auth] Email: Gmail ({GMAIL_USER})", file=sys.stderr)
     print(f"[auth] 1% Healthy Habit backend listening on {PUBLIC_BASE_URL}", file=sys.stderr)
     print(f"[auth] Frontend URL (for welcome email): {FRONTEND_URL}", file=sys.stderr)
     print(f"[auth] WhatsApp fallback: {WHATSAPP_NUMBER}", file=sys.stderr)

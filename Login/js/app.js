@@ -9,7 +9,7 @@
 (function () {
   'use strict';
 
-  const API_BASE = 'http://localhost:3000';
+  const API_BASE = ''; // same-origin: static files and API are served from the same host
   // Where the Login page itself is served from. Used to compute relative redirects
   // to /Teacher/ and /Student/ which live alongside /Login/ in the project root.
   const FRONTEND_ORIGIN = window.location.origin;

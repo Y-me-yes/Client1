@@ -13,7 +13,7 @@
   // ---------------- Constants ----------------
   const STORAGE_KEY = 'sst.students.v1';
   const WELCOME_KEY  = 'sst.welcomed.v1';
-  const API_BASE     = 'http://localhost:3000';
+  const API_BASE     = ''; // same-origin: static files and API are served from the same host
   const AVATAR_PALETTE = ['#8B5CF6', '#10B981', '#F43F5E', '#F59E0B', '#3B82F6', '#EC4899', '#14B8A6', '#6366F1'];
 
   // ---------------- State ----------------
