@@ -1,0 +1,43 @@
+# ============================================================
+# NEVER commit secrets. The Gmail App Password in .env can be
+# used to send email as you — treat it like a credit card.
+# ============================================================
+
+# All .env files anywhere in the tree
+.env
+.env.*
+!.env.example
+
+# Per-server .gitignore (server/) covers users.json, pendings.json,
+# codes.json, resets.json — duplicated here as defense-in-depth.
+**/users.json
+**/pendings.json
+**/codes.json
+**/resets.json
+
+# Runtime files written by the Login/ static server
+Login/serve.log
+Login/current-url.txt
+
+# Generic OS / editor noise
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Node (the project doesn't use it today, but ignore if added later)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/

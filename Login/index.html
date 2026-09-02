@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="description" content="1% Healthy Habit Circle — sign in or create your account.">
+  <title>1% Healthy Habit — Sign In</title>
+  <link rel="icon" type="image/png" href="assets/logo-original.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+
+  <main class="auth-shell">
+    <!-- LEFT: Auth card -->
+    <section class="auth-card" aria-label="Sign in or create account">
+      <header class="auth-head">
+        <p class="auth-eyebrow">
+          <span class="auth-eyebrow-dot" aria-hidden="true"></span>
+          EST. 2026 &nbsp;·&nbsp; THE 1% CIRCLE
+        </p>
+        <h1 class="auth-welcome">Welcome to the<br>1% Healthy Habit Circle.</h1>
+        <p class="auth-sub" id="authSub">Sign in to keep your streak, or create an account in seconds.</p>
+      </header>
+
+      <form id="authForm" class="auth-form" novalidate>
+        <!-- Username -->
+        <label class="field">
+          <span class="field-label">Username</span>
+          <div class="field-input-wrap">
+            <svg class="field-icon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+              <circle cx="12" cy="7" r="4"></circle>
+            </svg>
+            <input id="usernameInput" name="username" type="text" class="text-input has-icon"
+                   placeholder="e.g. aisha_r" autocomplete="username" autocapitalize="off" spellcheck="false" required>
+          </div>
+          <span class="field-error" id="usernameError" hidden>Please enter a username.</span>
+        </label>
+
+        <!-- PIN -->
+        <label class="field">
+          <span class="field-label">
+            <span>PIN</span>
+            <button id="forgotLink" class="forgot-link" type="button">Forgotten Password</button>
+          </span>
+          <div class="field-input-wrap">
+            <svg class="field-icon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+              <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+            </svg>
+            <input id="pinInput" name="pin" type="password" class="text-input has-icon"
+                   placeholder="••••••" inputmode="numeric" pattern="[0-9]*" minlength="6" maxlength="6"
+                   autocomplete="one-time-code" required>
+            <button id="togglePinBtn" class="field-trailing" type="button" aria-label="Show PIN" title="Show PIN">
+              <svg class="ico-eye" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                <circle cx="12" cy="12" r="3"></circle>
+              </svg>
+              <svg class="ico-eye-off" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"></path>
+                <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"></path>
+                <path d="M14.12 14.12a3 3 0 1 1-4.24-4.24"></path>
+                <line x1="1" y1="1" x2="23" y2="23"></line>
+              </svg>
+            </button>
+          </div>
+          <span class="field-meta" id="pinMeta" hidden>6 digits</span>
+          <span class="field-error" id="pinError" hidden>Please, enter a six digit password.</span>
+        </label>
+
+        <!-- Signup-only: Gmail -->
+        <label class="field" id="gmailField" hidden>
+          <span class="field-label">
+            <span>Gmail <span class="field-optional">(optional)</span></span>
+          </span>
+          <div class="field-input-wrap">
+            <svg class="field-icon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path>
+              <polyline points="22,6 12,13 2,6"></polyline>
+            </svg>
+            <input id="gmailInput" name="gmail" type="email" class="text-input has-icon"
+                   placeholder="you@gmail.com (only used to recover your account)" autocomplete="email" spellcheck="false">
+          </div>
+          <span class="field-error" id="gmailError" hidden>Enter a valid Gmail address.</span>
+          <span class="field-help">Optional. If you add one, we'll send a code to verify it before creating your account.</span>
+          <button id="sendCodeBtn" class="btn btn-ghost" type="button" disabled>
+            <span id="sendCodeLabel">Send Code</span>
+          </button>
+        </label>
+
+        <button id="authSubmit" class="btn btn-primary auth-submit" type="submit">
+          <span id="authSubmitLabel">Sign In</span>
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <line x1="5" y1="12" x2="19" y2="12"></line>
+            <polyline points="12 5 19 12 12 19"></polyline>
+          </svg>
+        </button>
+
+        <p class="auth-switch">
+          <span id="authSwitchPrompt">New to the circle?</span>
+          <button id="authSwitchBtn" type="button" class="link-btn">Create an account</button>
+        </p>
+      </form>
+    </section>
+
+    <!-- RIGHT: Logo + tagline -->
+    <aside class="auth-side" aria-hidden="true">
+      <div class="auth-logo-glow"></div>
+      <div class="auth-logo-ring">
+        <img class="auth-logo" src="assets/logo-original.png" alt="">
+      </div>
+      <p class="auth-tagline">SMALL DAILY HABITS RESULTING IN EXTRAORDINARY RESULT</p>
+    </aside>
+  </main>
+
+  <!-- ============== FORGOT PASSWORD MODAL ============== -->
+  <div id="forgotModal" class="modal" hidden aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="forgotTitle">
+    <div class="modal-backdrop" data-close-modal></div>
+    <div class="modal-card" role="document">
+      <button class="modal-close" type="button" aria-label="Close" data-close-modal>&times;</button>
+      <header class="modal-head">
+        <p class="auth-eyebrow">
+          <span class="auth-eyebrow-dot" aria-hidden="true"></span>
+          RECOVER YOUR ACCOUNT
+        </p>
+        <h2 class="modal-title" id="forgotTitle">Forgotten password?</h2>
+        <p class="modal-sub">Enter your username. If it matches an account, we'll email a 5-digit code to the Gmail you signed up with(if you added one while creating an account).</p>
+      </header>
+      <form id="forgotForm" class="auth-form" novalidate>
+        <label class="field">
+          <span class="field-label">Username</span>
+          <div class="field-input-wrap">
+            <svg class="field-icon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+              <circle cx="12" cy="7" r="4"></circle>
+            </svg>
+            <input id="forgotUsernameInput" name="username" type="text" class="text-input has-icon"
+                   placeholder="e.g. fateemah" autocomplete="username" autocapitalize="off" spellcheck="false" required>
+          </div>
+          <span class="field-error" id="forgotUsernameError" hidden>Please enter your username.</span>
+        </label>
+        <button id="forgotSubmit" class="btn btn-primary auth-submit" type="submit">
+          <span id="forgotSubmitLabel">Send Link</span>
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <line x1="5" y1="12" x2="19" y2="12"></line>
+            <polyline points="12 5 19 12 12 19"></polyline>
+          </svg>
+        </button>
+        <p class="modal-fallback">
+          Forgot your username too? Message <a href="https://wa.me/2348141594944" target="_blank" rel="noopener" class="modal-fallback-link">+234 814 159 4944</a> on WhatsApp.
+        </p>
+      </form>
+    </div>
+  </div>
+
+  <!-- ============== 5-BOX CODE ENTRY MODAL ============== -->
+  <div id="codeModal" class="modal" hidden aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="codeTitle">
+    <div class="modal-backdrop" data-close-modal></div>
+    <div class="modal-card" role="document">
+      <button class="modal-close" type="button" aria-label="Close" data-close-modal>&times;</button>
+      <header class="modal-head">
+        <p class="auth-eyebrow">
+          <span class="auth-eyebrow-dot" aria-hidden="true"></span>
+          ENTER THE CODE
+        </p>
+        <h2 class="modal-title" id="codeTitle">Enter the 5-digit code</h2>
+        <p class="modal-sub" id="codeSub">We sent a 5-digit code to your Gmail. Type it in below.</p>
+      </header>
+      <form id="codeForm" class="auth-form" novalidate>
+        <div class="code-boxes" id="codeBoxes" role="group" aria-label="5-digit code">
+          <input class="code-box" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="1" autocomplete="one-time-code" aria-label="Digit 1">
+          <input class="code-box" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="1" autocomplete="one-time-code" aria-label="Digit 2">
+          <input class="code-box" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="1" autocomplete="one-time-code" aria-label="Digit 3">
+          <input class="code-box" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="1" autocomplete="one-time-code" aria-label="Digit 4">
+          <input class="code-box" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="1" autocomplete="one-time-code" aria-label="Digit 5">
+        </div>
+        <span class="field-error" id="codeError" hidden>That code didn't match. Try again.</span>
+        <p class="code-timer" id="codeTimer">Code expires in <span id="codeTimerValue">15:00</span></p>
+        <button id="codeSubmit" class="btn btn-primary auth-submit" type="submit">
+          <span id="codeSubmitLabel">Verify</span>
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <line x1="5" y1="12" x2="19" y2="12"></line>
+            <polyline points="12 5 19 12 12 19"></polyline>
+          </svg>
+        </button>
+        <button id="codeResendBtn" class="btn btn-ghost auth-resend" type="button" hidden>
+          <span id="codeResendLabel">Resend code</span>
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <!-- ============== SET NEW PIN MODAL ============== -->
+  <div id="newPinModal" class="modal" hidden aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="newPinTitle">
+    <div class="modal-backdrop" data-close-modal></div>
+    <div class="modal-card" role="document">
+      <button class="modal-close" type="button" aria-label="Close" data-close-modal>&times;</button>
+      <header class="modal-head">
+        <p class="auth-eyebrow">
+          <span class="auth-eyebrow-dot" aria-hidden="true"></span>
+          SET A NEW PIN
+        </p>
+        <h2 class="modal-title" id="newPinTitle">Choose a new 6-digit PIN</h2>
+        <p class="modal-sub">Pick a PIN you'll remember. Use it to sign in from now on.</p>
+      </header>
+      <form id="newPinForm" class="auth-form" novalidate>
+        <label class="field">
+          <span class="field-label">New PIN</span>
+          <div class="field-input-wrap">
+            <input id="newPinInput" name="newPin" type="password" class="text-input"
+                   placeholder="••••••" inputmode="numeric" pattern="[0-9]*" minlength="6" maxlength="6" autocomplete="new-password" required>
+          </div>
+        </label>
+        <label class="field">
+          <span class="field-label">Confirm new PIN</span>
+          <div class="field-input-wrap">
+            <input id="newPinConfirm" name="newPinConfirm" type="password" class="text-input"
+                   placeholder="••••••" inputmode="numeric" pattern="[0-9]*" minlength="6" maxlength="6" autocomplete="new-password" required>
+          </div>
+          <span class="field-error" id="newPinError" hidden>PINs don't match or aren't 6 digits.</span>
+        </label>
+        <button id="newPinSubmit" class="btn btn-primary auth-submit" type="submit">
+          <span id="newPinSubmitLabel">Save PIN</span>
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <line x1="5" y1="12" x2="19" y2="12"></line>
+            <polyline points="12 5 19 12 12 19"></polyline>
+          </svg>
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Snackbar (toast) -->
+  <div id="snackbar" class="snackbar" hidden role="status" aria-live="polite"></div>
+
+  <script src="js/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,733 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="description" content="Student Score Tracker — offline-first gradebook for educators.">
+  <title>Student Score Tracker</title>
+  <link rel="icon" type="image/png" href="assets/logo-original.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+
+  <!-- ===== TOP APP BAR ===== -->
+  <header class="appbar">
+    <div class="appbar-inner">
+      <div class="brand">
+        <img class="brand-mark" src="assets/logo-original.png" alt="1% Healthy Habit" aria-hidden="true">
+        <div class="brand-text">
+          <h1 class="brand-title">Student Score Tracker</h1>
+          <p class="brand-sub" id="brandSub">0 students enrolled</p>
+        </div>
+      </div>
+
+      <div class="appbar-actions">
+        <div class="search-wrap">
+          <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="11" cy="11" r="7"></circle>
+            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+          </svg>
+          <input id="searchInput" type="search" class="search-input" placeholder="Search students..." aria-label="Search students">
+        </div>
+
+        <div class="sort-wrap">
+          <label for="sortSelect" class="visually-hidden">Sort students</label>
+          <select id="sortSelect" class="sort-select" aria-label="Sort students">
+            <option value="nameAsc">Name (A–Z)</option>
+            <option value="scoreDesc">Score (High → Low)</option>
+            <option value="scoreAsc">Score (Low → High)</option>
+          </select>
+        </div>
+
+        <button id="copyAllBtn" class="btn btn-ghost" type="button" aria-label="Copy all students to clipboard">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+            <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"></path>
+          </svg>
+          Copy
+        </button>
+
+        <button id="copyLoginLinkBtn" class="btn btn-ghost" type="button" aria-label="Copy Login page link to clipboard" title="Copy Login page link">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path>
+            <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path>
+          </svg>
+          Share
+        </button>
+
+        <button id="docsBtn" class="btn appbar-icon-btn" type="button" aria-label="Documentation" title="Docs">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"></path>
+            <polyline points="14 3 14 9 20 9"></polyline>
+            <line x1="8" y1="13" x2="16" y2="13"></line>
+            <line x1="8" y1="17" x2="16" y2="17"></line>
+            <line x1="8" y1="9" x2="10" y2="9"></line>
+          </svg>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- ===== MAIN ===== -->
+  <main class="container">
+
+    <!-- Quick Stats Row -->
+    <section class="quick-stats" aria-label="Quick stats">
+      <div class="stat-card">
+        <div class="stat-label">Total Students</div>
+        <div class="stat-value">
+          <span class="stat-big" id="statTotal">0</span>
+          <span class="stat-tag tag-primary">Enrolled</span>
+        </div>
+      </div>
+
+      <button id="memberStatusBtn" class="stat-card stat-card-interactive" type="button" aria-label="View active and ghost members">
+        <div class="stat-card-header">
+          <div class="stat-label">Member Status</div>
+          <svg class="stat-eye" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+            <circle cx="12" cy="12" r="3"></circle>
+          </svg>
+        </div>
+        <div class="member-rows">
+          <div class="member-row">
+            <span class="member-dot dot-success" aria-hidden="true"></span>
+            <span class="member-name">Active</span>
+            <span class="member-count" id="statActive">0</span>
+          </div>
+          <div class="member-row">
+            <span class="member-dot dot-error" aria-hidden="true"></span>
+            <span class="member-name">Ghost</span>
+            <span class="member-count" id="statGhost">0</span>
+          </div>
+        </div>
+      </button>
+    </section>
+
+    <!-- (History dashboard section removed; history lives as a column in the gradebook) -->
+
+    <!-- Gradebook -->
+    <section class="gradebook" aria-label="Student gradebook">
+      <div class="gradebook-head">
+        <h2 class="section-title">Gradebook</h2>
+        <p class="section-sub" id="gradebookSub">No students have signed up yet. Share the Login page link with your students.</p>
+      </div>
+
+      <div class="table-wrap" id="tableWrap" hidden>
+        <table class="grade-table">
+          <thead>
+            <tr>
+              <th class="col-rank">#</th>
+              <th class="col-name">Student</th>
+              <th class="col-score">Score</th>
+              <th class="col-history">History</th>
+              <th class="col-replies">Replies</th>
+              <th class="col-actions">Actions</th>
+
+            </tr>
+          </thead>
+          <tbody id="gradeTableBody"></tbody>
+        </table>
+      </div>
+
+      <div class="card-list" id="cardList" aria-live="polite"></div>
+
+      <div class="empty-state" id="emptyState">
+        <div class="empty-icon" aria-hidden="true">📚</div>
+        <h3>No students yet</h3>
+        <p>Students create their own accounts from the Login page. Once they sign up, their name appears here and you can award them points.</p>
+      </div>
+    </section>
+
+    <!-- Active content: today's challenge + any live notifications -->
+    <section class="content-card" aria-label="Active content">
+      <div class="content-head">
+        <span class="content-eyebrow">
+        <h2 class="content-title">Live contents for your students</h2>
+      </div>
+
+      <div class="content-body">
+        <div class="content-empty" id="contentEmpty">
+          <span class="content-empty-icon" aria-hidden="true">✨</span>
+          <p class="content-empty-text">No active content. Tap the + button to send your first challenge or notification.</p>
+        </div>
+        <div class="content-list" id="contentList" aria-live="polite" hidden></div>
+      </div>
+
+      <div class="content-footer">
+        <button id="openArchiveBtn" class="btn btn-ghost" type="button">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M3 12a9 9 0 1 0 3-6.7"></path>
+            <polyline points="3 4 3 9 8 9"></polyline>
+            <polyline points="12 7 12 12 15 14"></polyline>
+          </svg>
+          Open archive
+        </button>
+      </div>
+    </section>
+
+    <!-- (The standalone Replies section used to live here. It was
+         moved into the gradebook as a per-row "Replies" button — see
+         the Actions column. Clicking a row's Replies button opens the
+         existing repliesDialog pre-filtered to that student.) -->
+
+    <!-- (footer removed) -->
+  </main>
+
+  <!-- ===== AWARD SCORE DIALOG ===== -->
+  <div class="dialog-backdrop" id="addScoreDialog" hidden>
+    <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="addScoreTitle">
+      <div class="dialog-header">
+        <h2 id="addScoreTitle">Award Score</h2>
+        <button class="icon-btn" data-close-dialog="addScoreDialog" type="button" aria-label="Close">&times;</button>
+      </div>
+      <div class="dialog-body">
+        <p class="dialog-context">
+          Awarding to <strong id="addScoreName">—</strong>
+          · current score <span id="addScoreCurrent" class="score-pill">0</span>
+        </p>
+
+        <div class="field">
+          <span class="field-label">Quick Award</span>
+          <div class="delta-grid">
+            <button class="delta-btn delta-pos" type="button" data-delta="10">+10</button>
+            <button class="delta-btn delta-pos" type="button" data-delta="7">+7</button>
+            <button class="delta-btn delta-pos" type="button" data-delta="15">+15</button>
+            <button class="delta-btn delta-pos" type="button" data-delta="20">+20</button>
+          </div>
+        </div>
+
+        <label class="field">
+          <span class="field-label">Custom Award</span>
+          <input id="customDelta" type="number" step="any" min="0" class="text-input" placeholder="e.g. 3 or 12">
+        </label>
+      </div>
+      <div class="dialog-footer">
+        <button class="btn btn-ghost" data-close-dialog="addScoreDialog" type="button">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- (Edit Student dialog removed — students rename themselves from the Student page) -->
+
+  <!-- ===== HISTORY DIALOG ===== -->
+  <div class="dialog-backdrop" id="historyDialog" hidden>
+    <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="historyDialogTitle">
+      <div class="dialog-header">
+        <h2 id="historyDialogTitle">Award History</h2>
+        <button class="icon-btn" data-close-dialog="historyDialog" type="button" aria-label="Close">&times;</button>
+      </div>
+      <div class="dialog-body">
+        <p class="dialog-context">
+          Showing awards for <strong id="historyName">—</strong>
+          · total <span id="historyTotal" class="score-pill">0</span>
+        </p>
+        <div id="historyList" class="history-list"></div>
+      </div>
+      <div class="dialog-footer">
+        <button class="btn btn-ghost" data-close-dialog="historyDialog" type="button">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== ACTIVE / GHOST DIALOG ===== -->
+  <div class="dialog-backdrop" id="memberDialog" hidden>
+    <div class="dialog dialog-wide" role="dialog" aria-modal="true" aria-labelledby="memberDialogTitle">
+      <div class="dialog-header">
+        <h2 id="memberDialogTitle">Member Classification</h2>
+        <button class="icon-btn" data-close-dialog="memberDialog" type="button" aria-label="Close">&times;</button>
+      </div>
+      <div class="dialog-body">
+        <div class="tabs" role="tablist">
+          <button class="tab is-active" data-tab="active" role="tab" aria-selected="true" type="button">
+            <span class="member-dot dot-success" aria-hidden="true"></span>
+            Active <span class="tab-count" id="tabActiveCount">0</span>
+          </button>
+          <button class="tab" data-tab="ghost" role="tab" aria-selected="false" type="button">
+            <span class="member-dot dot-error" aria-hidden="true"></span>
+            Ghost <span class="tab-count" id="tabGhostCount">0</span>
+          </button>
+        </div>
+
+        <div class="tab-panel" id="panelActive" role="tabpanel"></div>
+        <div class="tab-panel" id="panelGhost" role="tabpanel" hidden></div>
+      </div>
+      <div class="dialog-footer">
+        <button class="btn btn-ghost" data-close-dialog="memberDialog" type="button">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== REPLIES DIALOG (per-student popup) =====
+       Two views share this dialog:
+         - view='today'   (speech-bubble Replies icon) — only today's
+                          replies, with per-reply timestamps + parent.
+         - view='archive' (box Archive icon) — every reply, grouped by
+                          day, no per-reply timestamps.
+       The title text is updated dynamically based on the view. -->
+  <div class="dialog-backdrop" id="repliesDialog" hidden>
+    <div class="dialog dialog-wide" role="dialog" aria-modal="true" aria-labelledby="repliesDialogTitle">
+      <div class="dialog-header">
+        <h2 id="repliesDialogTitle">Replies · <span id="repliesDialogStudent">…</span></h2>
+        <button class="icon-btn" data-close-dialog="repliesDialog" type="button" aria-label="Close">&times;</button>
+      </div>
+      <div class="dialog-body">
+        <p class="dialog-context" id="repliesDialogContext">Loading…</p>
+        <div class="replies-detail-list" id="repliesDialogList"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== DELETE CONFIRM DIALOG ===== -->
+  <div class="dialog-backdrop" id="deleteDialog" hidden>
+    <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="deleteTitle">
+      <div class="dialog-header">
+        <h2 id="deleteTitle">Delete Student</h2>
+        <button class="icon-btn" data-close-dialog="deleteDialog" type="button" aria-label="Close">&times;</button>
+      </div>
+      <div class="dialog-body">
+        <p>Are you sure you want to delete <strong id="deleteName">—</strong>? This cannot be undone.</p>
+      </div>
+      <div class="dialog-footer">
+        <button class="btn btn-ghost" data-close-dialog="deleteDialog" type="button">Cancel</button>
+        <button id="deleteConfirm" class="btn btn-danger" type="button">Delete</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== DOCUMENTATION DIALOG ===== -->
+  <div class="dialog-backdrop" id="docsDialog" hidden>
+    <div class="dialog dialog-wide" role="dialog" aria-modal="true" aria-labelledby="docsDialogTitle">
+      <div class="dialog-header">
+        <h2 id="docsDialogTitle">Documentation</h2>
+        <button class="icon-btn" data-close-dialog="docsDialog" type="button" aria-label="Close">&times;</button>
+      </div>
+      <div class="dialog-body docs-body">
+
+        <!-- Hero: what this website is, in one breath -->
+        <section class="docs-hero">
+          <div class="docs-hero-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 2 L2 21 L22 21 Z"></path>
+              <line x1="12" y1="9" x2="12" y2="14"></line>
+              <circle cx="12" cy="17.5" r="0.6" fill="currentColor"></circle>
+            </svg>
+          </div>
+          <div>
+            <p class="docs-hero-eyebrow">QUICK START</p>
+            <h3 class="docs-hero-title">Up and running in 30 seconds.</h3>
+            <p class="docs-hero-lede">No setup, no sign-in, no clutter. Add your first student, hand out a few points, and you'll get the hang of it instantly.</p>
+          </div>
+        </section>
+
+        <!-- Section 1: numbered steps -->
+        <section class="docs-section">
+          <header class="docs-section-head">
+            <span class="docs-section-num" aria-hidden="true">01</span>
+            <h4 class="docs-section-title">Add, award &amp; manage</h4>
+          </header>
+          <ol class="docs-steps">
+            <li>
+              <span class="docs-step-num">1</span>
+              <div>
+                <p class="docs-step-title">Award points with the <strong>+</strong> button.</p>
+                <p class="docs-step-body">Pick a quick award of +10, +7, +15, or +20 — or type any custom positive amount. Scores update live.</p>
+              </div>
+            </li>
+            <li>
+              <span class="docs-step-num">2</span>
+              <div>
+                <p class="docs-step-title">Students rename themselves.</p>
+                <p class="docs-step-body">Names here are read-only — students can update their own username from their own page, with their PIN. Use the trash icon to remove a student permanently.</p>
+              </div>
+            </li>
+            <li>
+              <span class="docs-step-num">3</span>
+              <div>
+                <p class="docs-step-title">Tap the clock icon to see history.</p>
+                <p class="docs-step-body">Every award is logged with the time it happened. Open the history dialog to see them grouped by day, with a per-day total.</p>
+              </div>
+            </li>
+          </ol>
+        </section>
+
+        <!-- Section 2: status legend, two big chips -->
+        <section class="docs-section">
+          <header class="docs-section-head">
+            <span class="docs-section-num" aria-hidden="true">02</span>
+            <h4 class="docs-section-title">Member status at a glance</h4>
+          </header>
+          <p class="docs-section-lede">Every student gets a live status based on their activity. Tap the <strong>Member Status</strong> card in the dashboard to see them sorted.</p>
+          <div class="docs-status-grid">
+            <div class="docs-status docs-status-active">
+              <span class="docs-status-dot" aria-hidden="true"></span>
+              <div>
+                <p class="docs-status-name">Active</p>
+                <p class="docs-status-body">Awarded points in the last 24 hours and holds a positive score. Keep the momentum going.</p>
+              </div>
+            </div>
+            <div class="docs-status docs-status-ghost">
+              <span class="docs-status-dot" aria-hidden="true"></span>
+              <div>
+                <p class="docs-status-name">Ghost</p>
+                <p class="docs-status-body">No points awarded in 24 hours, or sitting at zero. A quick award brings them back to active.</p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Section 3: shortcuts table -->
+        <section class="docs-section">
+          <header class="docs-section-head">
+            <span class="docs-section-num" aria-hidden="true">03</span>
+            <h4 class="docs-section-title">Keyboard shortcuts &amp; quick tips</h4>
+          </header>
+          <div class="docs-shortcuts">
+            <div class="docs-shortcut">
+              <div class="docs-shortcut-keys"><kbd>Esc</kbd></div>
+              <p class="docs-shortcut-desc">Close any open dialog.</p>
+            </div>
+            <div class="docs-shortcut">
+              <div class="docs-shortcut-keys"><kbd>Enter</kbd></div>
+              <p class="docs-shortcut-desc">Submit the Custom Award field.</p>
+            </div>
+            <div class="docs-shortcut">
+              <div class="docs-shortcut-keys"><span class="docs-shortcut-tag">Type</span></div>
+              <p class="docs-shortcut-desc">Start typing in the search bar to filter students live.</p>
+            </div>
+            <div class="docs-shortcut">
+              <div class="docs-shortcut-keys"><span class="docs-shortcut-tag">Click</span></div>
+              <p class="docs-shortcut-desc"><strong>Copy</strong> in the top bar grabs a leaderboard-formatted list.</p>
+            </div>
+          </div>
+        </section>
+
+        <!-- Section 4: share content (FAB) -->
+        <section class="docs-section">
+          <header class="docs-section-head">
+            <span class="docs-section-num" aria-hidden="true">04</span>
+            <h4 class="docs-section-title">Share content with the + button</h4>
+          </header>
+          <p class="docs-section-lede">The floating <strong>+</strong> button in the bottom-right corner opens a popup with four options. Each one posts to the active list on every student's page.</p>
+          <div class="docs-shortcuts">
+            <div class="docs-shortcut">
+              <div class="docs-shortcut-keys"><span class="docs-shortcut-tag">New Challenge</span></div>
+              <p class="docs-shortcut-desc">A prompt with a custom expiry you pick (1 minute to 30 days out).</p>
+            </div>
+            <div class="docs-shortcut">
+              <div class="docs-shortcut-keys"><span class="docs-shortcut-tag">Daily Challenge</span></div>
+              <p class="docs-shortcut-desc">A 24-hour prompt that auto-expires at midnight tomorrow.</p>
+            </div>
+            <div class="docs-shortcut">
+              <div class="docs-shortcut-keys"><span class="docs-shortcut-tag">Notification</span></div>
+              <p class="docs-shortcut-desc">A one-way message that auto-archives as soon as every student has viewed it.</p>
+            </div>
+            <div class="docs-shortcut">
+              <div class="docs-shortcut-keys"><span class="docs-shortcut-tag">Message</span></div>
+              <p class="docs-shortcut-desc">Like a notification, but students can reply with text and an audio recording. Stays active until you archive it.</p>
+            </div>
+          </div>
+          <p class="docs-section-lede" style="margin-top:14px">For challenges, pick a <strong>return type</strong> in the dialog: <em>Text</em> (a written reflection), <em>Image</em> (students upload a photo), <em>Video</em> (a short clip), or <em>Audio</em> (a recording). The student's card on their page shows a Submit button scoped to that type. Every reply has BOTH a text part and a media part, so a student can write a note with their image, or just send a recording with no text — fill one, fill both, or fill neither (the form requires at least one).</p>
+        </section>
+
+        <!-- Section 5: replies + archive -->
+        <section class="docs-section">
+          <header class="docs-section-head">
+            <span class="docs-section-num" aria-hidden="true">05</span>
+            <h4 class="docs-section-title">Read student replies</h4>
+          </header>
+          <p class="docs-section-lede">In the <strong>Gradebook</strong> section, every student row has a <strong>Replies</strong> button in the Actions column (a speech-bubble icon). Tap it to open a popup showing every reply that student has made to a challenge or message, newest first. Each reply is labeled with which message or challenge it was for, and shows both the text and the media (image, video, or audio) inline.</p>
+          <p class="docs-section-lede" style="margin-top:10px">Students can post more than one reply to the same challenge or message — useful for follow-ups, edits, or audio updates. The teacher-side gradebook is the canonical record of awards; replies are conversation, not points.</p>
+        </section>
+
+      </div>
+      <div class="dialog-footer">
+        <button class="btn btn-ghost" data-close-dialog="docsDialog" type="button">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== WELCOME DIALOG (first-visit) ===== -->
+  <div class="dialog-backdrop welcome-backdrop" id="welcomeDialog" hidden>
+    <div class="dialog welcome-dialog" role="dialog" aria-modal="true" aria-labelledby="welcomeTitle">
+      <div class="welcome-hero">
+        <div class="welcome-eyebrow">
+          <span class="welcome-dot" aria-hidden="true"></span>
+          WELCOME
+        </div>
+        <h2 id="welcomeTitle" class="welcome-title">We are excited to have you here!</h2>
+        <p class="welcome-lede">Before we begin, you should know you're not just opening a website. You're stepping into a community that wants to see you grow — one small, healthy habit at a time.</p>
+        <button class="btn btn-primary welcome-cta" data-close-dialog="welcomeDialog" type="button">
+          Let's begin
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <line x1="5" y1="12" x2="19" y2="12"></line>
+            <polyline points="12 5 19 12 12 19"></polyline>
+          </svg>
+        </button>
+      </div>
+
+      <div class="welcome-body">
+        <p class="welcome-paragraph">
+          This is more than just a website &mdash; it is a community designed to help you grow <strong>1% better every day</strong> through healthy habits, self-discipline, positive choices, accountability, and personal growth.
+        </p>
+        <p class="welcome-paragraph">
+          Track your daily habits, earn points, participate in challenges, learn, stay accountable, and grow alongside other amazing members.
+        </p>
+
+        <div class="welcome-pull">
+          <span class="welcome-pull-mark" aria-hidden="true">&ldquo;</span>
+          <p>You don't have to change everything at once. Small positive actions repeated every day can create lasting change.&rdquo;</p>
+        </div>
+
+        <ul class="welcome-verbs">
+          <li><span class="welcome-verb-num" aria-hidden="true">1</span><span><strong>Show up.</strong> Be present, even on the days you don't feel like it.</span></li>
+          <li><span class="welcome-verb-num" aria-hidden="true">2</span><span><strong>Stay consistent.</strong> Tiny actions, done often, beat rare big ones.</span></li>
+          <li><span class="welcome-verb-num" aria-hidden="true">3</span><span><strong>Keep growing.</strong> A better version of you is being built, one day at a time.</span></li>
+        </ul>
+
+        <p class="welcome-signoff">
+          Welcome to your journey towards a healthier, more disciplined, and better version of yourself.
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== FAB (floating action button) ===== -->
+  <button id="fabBtn" class="fab" type="button" aria-label="Create new content">
+    <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <line x1="12" y1="5" x2="12" y2="19"></line>
+      <line x1="5" y1="12" x2="19" y2="12"></line>
+    </svg>
+  </button>
+
+  <!-- Transparent backdrop for the FAB popup. Tapping it closes
+       the popup (same UX as dialog backdrops). Hidden by default;
+       shown when the popup is open via .is-open class. -->
+  <div id="fabBackdrop" class="fab-backdrop" hidden></div>
+
+  <!-- ===== FAB POPUP (three options) ===== -->
+  <div class="fab-popup" id="fabPopup" hidden role="menu" aria-label="What would you like to do?">
+    <button class="fab-popup-item" data-fab-action="new-challenge" type="button" role="menuitem">
+      <span class="fab-popup-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="5" width="18" height="16" rx="2"></rect>
+          <line x1="3" y1="10" x2="21" y2="10"></line>
+          <line x1="12" y1="3" x2="12" y2="7"></line>
+          <line x1="17" y1="3" x2="17" y2="7"></line>
+          <line x1="7" y1="3" x2="7" y2="7"></line>
+        </svg>
+      </span>
+      <span class="fab-popup-text">
+        <span class="fab-popup-title">New Challenge</span>
+        <span class="fab-popup-sub">Set a prompt with a custom expiry</span>
+      </span>
+    </button>
+
+    <button class="fab-popup-item" data-fab-action="daily-challenge" type="button" role="menuitem">
+      <span class="fab-popup-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="9"></circle>
+          <line x1="12" y1="7" x2="12" y2="12"></line>
+          <line x1="12" y1="12" x2="15" y2="14"></line>
+        </svg>
+      </span>
+      <span class="fab-popup-text">
+        <span class="fab-popup-title">Daily Challenge</span>
+        <span class="fab-popup-sub">A 24-hour prompt, auto-expires tomorrow</span>
+      </span>
+    </button>
+
+    <button class="fab-popup-item" data-fab-action="notification" type="button" role="menuitem">
+      <span class="fab-popup-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"></path>
+          <path d="M13.7 21a2 2 0 0 1-3.4 0"></path>
+        </svg>
+      </span>
+      <span class="fab-popup-text">
+        <span class="fab-popup-title">Notification</span>
+        <span class="fab-popup-sub">A message that archives when everyone has seen it</span>
+      </span>
+    </button>
+
+    <button class="fab-popup-item" data-fab-action="message" type="button" role="menuitem">
+      <span class="fab-popup-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path>
+        </svg>
+      </span>
+      <span class="fab-popup-text">
+        <span class="fab-popup-title">Message</span>
+        <span class="fab-popup-sub">Students can reply with text and an audio clip</span>
+      </span>
+    </button>
+  </div>
+
+  <!-- ===== NEW CHALLENGE DIALOG (custom expiry) ===== -->
+  <div class="dialog-backdrop" id="newChallengeDialog" hidden>
+    <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="newChallengeTitle">
+      <div class="dialog-header">
+        <h2 id="newChallengeTitle">New Challenge</h2>
+        <button class="icon-btn" data-close-dialog="newChallengeDialog" type="button" aria-label="Close">&times;</button>
+      </div>
+      <div class="dialog-body">
+        <label class="field">
+          <span class="field-label">Challenge text</span>
+          <textarea id="newChallengeInput" class="text-input" rows="3" maxlength="280" placeholder="e.g. Walk for 20 minutes and notice one thing you see"></textarea>
+        </label>
+        <label class="field">
+          <span class="field-label">Expires at</span>
+          <input id="newChallengeExpires" type="datetime-local" class="text-input" />
+        </label>
+        <fieldset class="return-type">
+          <legend class="field-label">Return type</legend>
+          <label class="return-type-option">
+            <input type="radio" name="newChallengeReturnType" value="text" checked />
+            <span class="return-type-label">Text</span>
+            <span class="return-type-sub">A written reflection</span>
+          </label>
+          <label class="return-type-option">
+            <input type="radio" name="newChallengeReturnType" value="image" />
+            <span class="return-type-label">Image</span>
+            <span class="return-type-sub">Students upload a photo</span>
+          </label>
+          <label class="return-type-option">
+            <input type="radio" name="newChallengeReturnType" value="video" />
+            <span class="return-type-label">Video</span>
+            <span class="return-type-sub">Students upload a clip</span>
+          </label>
+          <label class="return-type-option">
+            <input type="radio" name="newChallengeReturnType" value="audio" />
+            <span class="return-type-label">Audio</span>
+            <span class="return-type-sub">Students upload a recording</span>
+          </label>
+        </fieldset>
+        <p class="field-error" id="newChallengeError" hidden></p>
+      </div>
+      <div class="dialog-footer">
+        <button class="btn btn-ghost" data-close-dialog="newChallengeDialog" type="button">Cancel</button>
+        <button id="newChallengeSaveBtn" class="btn btn-primary" type="button">Post</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== DAILY CHALLENGE DIALOG ===== -->
+  <div class="dialog-backdrop" id="dailyChallengeDialog" hidden>
+    <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="dailyChallengeTitle">
+      <div class="dialog-header">
+        <h2 id="dailyChallengeTitle">Daily Challenge</h2>
+        <button class="icon-btn" data-close-dialog="dailyChallengeDialog" type="button" aria-label="Close">&times;</button>
+      </div>
+      <div class="dialog-body">
+        <p class="dialog-context">This challenge expires in 24 hours. Students can mark it done on their page.</p>
+        <label class="field">
+          <span class="field-label">Challenge text</span>
+          <textarea id="dailyChallengeInput" class="text-input" rows="3" maxlength="280" placeholder="Today's challenge…"></textarea>
+        </label>
+        <fieldset class="return-type">
+          <legend class="field-label">Return type</legend>
+          <label class="return-type-option">
+            <input type="radio" name="dailyChallengeReturnType" value="text" checked />
+            <span class="return-type-label">Text</span>
+            <span class="return-type-sub">A written reflection</span>
+          </label>
+          <label class="return-type-option">
+            <input type="radio" name="dailyChallengeReturnType" value="image" />
+            <span class="return-type-label">Image</span>
+            <span class="return-type-sub">Students upload a photo</span>
+          </label>
+          <label class="return-type-option">
+            <input type="radio" name="dailyChallengeReturnType" value="video" />
+            <span class="return-type-label">Video</span>
+            <span class="return-type-sub">Students upload a clip</span>
+          </label>
+          <label class="return-type-option">
+            <input type="radio" name="dailyChallengeReturnType" value="audio" />
+            <span class="return-type-label">Audio</span>
+            <span class="return-type-sub">Students upload a recording</span>
+          </label>
+        </fieldset>
+        <p class="field-error" id="dailyChallengeError" hidden></p>
+      </div>
+      <div class="dialog-footer">
+        <button class="btn btn-ghost" data-close-dialog="dailyChallengeDialog" type="button">Cancel</button>
+        <button id="dailyChallengeSaveBtn" class="btn btn-primary" type="button">Post</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== NOTIFICATION DIALOG ===== -->
+  <div class="dialog-backdrop" id="notificationDialog" hidden>
+    <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="notificationTitle">
+      <div class="dialog-header">
+        <h2 id="notificationTitle">New Notification</h2>
+        <button class="icon-btn" data-close-dialog="notificationDialog" type="button" aria-label="Close">&times;</button>
+      </div>
+      <div class="dialog-body">
+        <p class="dialog-context">This message will appear on every student's page. It auto-archives as soon as everyone has viewed it — or you can archive it manually.</p>
+        <label class="field">
+          <span class="field-label">Title</span>
+          <input id="notificationTitleInput" class="text-input" type="text" maxlength="80" placeholder="e.g. Class meeting Friday at 3pm" />
+        </label>
+        <label class="field">
+          <span class="field-label">Message</span>
+          <textarea id="notificationBodyInput" class="text-input" rows="4" maxlength="500" placeholder="Write the message your students should see…"></textarea>
+        </label>
+        <p class="field-error" id="notificationError" hidden></p>
+      </div>
+      <div class="dialog-footer">
+        <button class="btn btn-ghost" data-close-dialog="notificationDialog" type="button">Cancel</button>
+        <button id="notificationSaveBtn" class="btn btn-primary" type="button">Send</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== MESSAGE DIALOG (text + audio replies) ===== -->
+  <div class="dialog-backdrop" id="messageDialog" hidden>
+    <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="messageTitle">
+      <div class="dialog-header">
+        <h2 id="messageTitle">New Message</h2>
+        <button class="icon-btn" data-close-dialog="messageDialog" type="button" aria-label="Close">&times;</button>
+      </div>
+      <div class="dialog-body">
+        <p class="dialog-context">Students can reply with text and an audio recording. Messages stay active until you archive them.</p>
+        <label class="field">
+          <span class="field-label">Title</span>
+          <input id="messageTitleInput" class="text-input" type="text" maxlength="80" placeholder="e.g. Welcome back" />
+        </label>
+        <label class="field">
+          <span class="field-label">Message</span>
+          <textarea id="messageBodyInput" class="text-input" rows="4" maxlength="500" placeholder="Write the message…"></textarea>
+        </label>
+        <p class="field-error" id="messageError" hidden></p>
+      </div>
+      <div class="dialog-footer">
+        <button class="btn btn-ghost" data-close-dialog="messageDialog" type="button">Cancel</button>
+        <button id="messageSaveBtn" class="btn btn-primary" type="button">Send</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== ARCHIVE DRAWER ===== -->
+  <div class="drawer-backdrop" id="archiveDrawer" hidden>
+    <aside class="drawer" role="dialog" aria-modal="true" aria-labelledby="archiveDrawerTitle">
+      <header class="drawer-header">
+        <h2 id="archiveDrawerTitle">Archive</h2>
+        <button class="icon-btn" data-close-dialog="archiveDrawer" type="button" aria-label="Close">&times;</button>
+      </header>
+      <div class="drawer-body">
+        <p class="drawer-context" id="archiveContext">Loading…</p>
+        <div class="drawer-list" id="archiveList"></div>
+      </div>
+    </aside>
+  </div>
+
+  <!-- ===== SNACKBAR ===== -->
+  <div id="snackbar" class="snackbar" hidden role="status" aria-live="polite"></div>
+
+  <script src="js/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,1354 @@
+/* ============================================================
+   Student page — 1% Healthy Habit
+   Dark bento theme, palette ported from FINISHED/Students/.
+   This is the student-facing page; only the bits the student
+   sees (greeting, score, daily challenge) are included.
+   ============================================================ */
+
+:root {
+  --bg:            #0F1117;
+  --card:          #181B26;
+  --card-alt:      #222738;
+  --card-header:   #131620;
+
+  --primary:       #B0D040;
+  --primary-2:     #A0C030;
+  --primary-3:     #90B020;
+  --primary-cont:  #3B4517;
+  --on-primary:    #0F1117;
+  --success:       #90B020;
+  --success-cont:  #2A330A;
+  --error:         #F43F5E;
+  --error-cont:    #4C0519;
+
+  --border:        #2E354B;
+  --border-hi:     #475569;
+
+  --text:          #F8FAFC;
+  --text-2:        #94A3B8;
+  --text-muted:    #64748B;
+
+  --r-md: 12px;
+  --r-lg: 18px;
+  --r-xl: 24px;
+  --r-2xl: 28px;
+  --ease: cubic-bezier(.2, .8, .2, 1);
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: clamp(14px, 3.6vw, 16px);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  min-height: 100%;
+}
+
+body {
+  background:
+    radial-gradient(1100px 600px at 80% -10%, rgba(176, 208, 64, 0.10), transparent 60%),
+    radial-gradient(900px 500px at -10% 110%, rgba(144, 176, 32, 0.08), transparent 60%),
+    var(--bg);
+  min-height: 100vh;
+}
+
+.visually-hidden {
+  position: absolute !important;
+  width: 1px; height: 1px;
+  padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0,0,0,0);
+  white-space: nowrap; border: 0;
+}
+
+.container {
+  max-width: 880px;
+  margin: 0 auto;
+  padding: 0 20px 40px;
+}
+
+/* ===== APP BAR ===== */
+.appbar {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  background: rgba(15, 17, 23, 0.85);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border-bottom: 1px solid var(--border);
+}
+.appbar-inner {
+  max-width: 880px;
+  margin: 0 auto;
+  padding: 14px 20px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.brand { display: flex; align-items: center; gap: 12px; flex: 1 1 auto; min-width: 200px; }
+.brand-mark {
+  width: 44px; height: 44px;
+  border-radius: 50%;
+  background: #fff;
+  display: block;
+  object-fit: contain;
+}
+.brand-title { margin: 0; font-size: 16px; font-weight: 700; letter-spacing: -0.01em; }
+.brand-sub   { margin: 2px 0 0; font-size: 12px; color: var(--text-2); }
+
+.appbar-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+
+.signout-link {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-2);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 8px 14px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: color .15s var(--ease), background .15s var(--ease), border-color .15s var(--ease);
+}
+.signout-link:hover { color: var(--text); background: var(--card-alt); border-color: var(--border-hi); }
+.signout-link:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+
+/* ===== BUTTONS ===== */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 16px;
+  border-radius: 999px;
+  font: inherit;
+  font-weight: 700;
+  font-size: 14px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: transform .1s var(--ease), background .15s var(--ease), color .15s var(--ease);
+  text-decoration: none;
+  white-space: nowrap;
+}
+.btn:active { transform: translateY(1px); }
+.btn:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+
+.btn-primary {
+  background: var(--primary);
+  color: var(--on-primary);
+}
+.btn-primary:hover { background: var(--primary-2); }
+.btn-primary:disabled { opacity: .55; cursor: not-allowed; }
+
+.btn-ghost {
+  background: var(--card);
+  color: var(--text);
+  border-color: var(--border);
+}
+.btn-ghost:hover { background: var(--card-alt); border-color: var(--border-hi); }
+
+/* ===== HERO (greeting + score pill) ===== */
+.hero {
+  margin: 28px 0 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 24px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--r-2xl);
+}
+.hero-greeting {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.hero-avatar {
+  width: 64px; height: 64px;
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--on-primary);
+  font-weight: 800;
+  font-size: 22px;
+  letter-spacing: -0.01em;
+  flex-shrink: 0;
+}
+.hero-text { min-width: 0; flex: 1 1 auto; }
+.hero-title { margin: 0; font-size: 24px; font-weight: 800; letter-spacing: -0.02em; color: var(--text); }
+.hero-sub   { margin: 4px 0 0; font-size: 13px; color: var(--text-2); }
+
+.score-pill {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 12px 18px;
+  background: var(--primary-cont);
+  color: var(--primary);
+  border: 1px solid var(--primary-3);
+  border-radius: var(--r-lg);
+  font-weight: 700;
+  align-self: flex-start;
+}
+.score-pill-num { font-size: 32px; font-weight: 800; letter-spacing: -0.02em; color: var(--primary); }
+.score-pill-label { font-size: 13px; color: var(--text-2); text-transform: uppercase; letter-spacing: 0.06em; }
+
+/* ===== DAILY CHALLENGE (student view) ===== */
+.challenge-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--r-2xl);
+  padding: 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.challenge-head { display: flex; flex-direction: column; gap: 4px; }
+
+.challenge-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--primary);
+}
+.challenge-eyebrow-dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--primary);
+  box-shadow: 0 0 0 4px var(--primary-cont);
+}
+
+.challenge-title {
+  font-size: 22px;
+  font-weight: 800;
+  margin: 0;
+  letter-spacing: -0.02em;
+  color: var(--text);
+}
+
+.challenge-lede {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-2);
+}
+
+.challenge-body { display: flex; flex-direction: column; gap: 12px; }
+
+.challenge-empty {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px;
+  background: var(--card-alt);
+  border: 1px dashed var(--border-hi);
+  border-radius: var(--r-lg);
+}
+.challenge-empty-icon { font-size: 24px; line-height: 1; }
+.challenge-empty-text { margin: 0; font-size: 14px; color: var(--text-2); }
+
+.challenge-text {
+  margin: 0;
+  padding: 16px 18px;
+  background: var(--card-alt);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--primary);
+  border-radius: var(--r-lg);
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--text);
+  line-height: 1.45;
+}
+
+.challenge-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.challenge-done-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: var(--success-cont);
+  color: var(--success);
+  border: 1px solid var(--primary-3);
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+.challenge-done-pill::before {
+  content: '';
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--success);
+}
+
+.challenge-unmark {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 8px;
+  transition: color .15s var(--ease), background .15s var(--ease);
+}
+.challenge-unmark:hover { color: var(--text); background: var(--card-alt); }
+.challenge-unmark:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+
+/* ===== NOT SIGNED IN / MISC ===== */
+.not-signed-in {
+  margin: 60px auto;
+  max-width: 480px;
+  text-align: center;
+  padding: 32px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--r-2xl);
+}
+.not-signed-in h2 { margin: 0 0 8px; font-size: 20px; }
+.not-signed-in p  { margin: 0 0 16px; color: var(--text-2); }
+
+/* ===== WELCOME DIALOG (first-visit only) ===== */
+.welcome-backdrop {
+  position: fixed; inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 50;
+  padding: 20px;
+  animation: welcomeFade .25s var(--ease);
+}
+.welcome-backdrop[hidden] { display: none; }
+@keyframes welcomeFade { from { opacity: 0; } to { opacity: 1; } }
+
+.welcome-dialog {
+  max-width: 560px;
+  padding: 0;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - 40px);
+  overflow: hidden;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--r-2xl);
+  box-shadow: 0 24px 64px rgba(0,0,0,.4);
+  animation: welcomePop .25s var(--ease);
+}
+@keyframes welcomePop {
+  from { opacity: 0; transform: scale(0.96) translateY(8px); }
+  to   { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+.welcome-hero {
+  padding: 32px 32px 24px;
+  background: linear-gradient(180deg, var(--primary-cont) 0%, var(--card) 100%);
+  display: flex; flex-direction: column; gap: 14px;
+  flex-shrink: 0;
+}
+.welcome-eyebrow {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-size: 11px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--primary);
+}
+.welcome-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--primary);
+  box-shadow: 0 0 0 4px var(--primary-cont);
+}
+.welcome-title { margin: 0; font-size: 24px; font-weight: 800; letter-spacing: -0.02em; }
+.welcome-lede  { margin: 0; font-size: 14px; color: var(--text-2); line-height: 1.5; }
+.welcome-cta { align-self: flex-start; }
+
+.welcome-body {
+  padding: 24px 32px 30px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  background: var(--card);
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+.welcome-paragraph { margin: 0; font-size: 14px; color: var(--text); line-height: 1.55; }
+.welcome-paragraph strong { color: var(--primary); }
+
+.welcome-pull {
+  display: flex; gap: 12px;
+  padding: 14px 18px;
+  background: var(--card-alt);
+  border-left: 3px solid var(--primary);
+  border-radius: var(--r-md);
+  font-size: 13px; line-height: 1.5; color: var(--text);
+}
+.welcome-pull p { margin: 0; }
+.welcome-pull-mark { font-size: 28px; line-height: 1; color: var(--primary); font-weight: 800; }
+
+.welcome-verbs { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 8px; }
+.welcome-verbs li {
+  display: flex; gap: 12px; align-items: flex-start;
+  padding: 10px 14px;
+  background: var(--card-alt);
+  border-radius: var(--r-md);
+  font-size: 13px; color: var(--text);
+}
+.welcome-verbs li strong { color: var(--primary); }
+.welcome-verb-num {
+  width: 22px; height: 22px;
+  border-radius: 50%;
+  background: var(--primary);
+  color: var(--on-primary);
+  font-size: 12px; font-weight: 800;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+}
+
+.welcome-signoff {
+  margin: 4px 0 0;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+  text-align: center;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--primary);
+  line-height: 1.5;
+}
+
+.welcome-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 22px;
+  padding-top: 18px;
+  border-top: 1px solid var(--border);
+}
+
+/* ===== SNACKBAR ===== */
+.snackbar {
+  position: fixed;
+  left: 50%;
+  bottom: 24px;
+  transform: translateX(-50%);
+  background: var(--card);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 10px 18px;
+  font-size: 13px;
+  font-weight: 600;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
+  z-index: 80;
+  animation: snackIn .25s var(--ease);
+}
+@keyframes snackIn {
+  from { opacity: 0; transform: translate(-50%, 12px); }
+  to   { opacity: 1; transform: translate(-50%, 0); }
+}
+
+@media (max-width: 720px) {
+  .hero           { padding: 18px; }
+  .hero-title     { font-size: 20px; }
+  .score-pill-num { font-size: 28px; }
+  .challenge-card { padding: 18px; }
+  .more-content-row { padding: 12px 14px; }
+  .welcome-hero    { padding: 28px 22px 22px; }
+  .welcome-body    { padding: 20px 22px 24px; }
+  .welcome-title   { font-size: 22px; }
+  .appbar-inner    { gap: 10px; }
+  .signout-link    { padding: 7px 12px; font-size: 12px; }
+}
+
+/* ===== MORE CONTENT (notifications + custom challenges) =====
+   Vertical stack rendered under the daily-challenge card.
+   Latest first; mirrors the card visual language. */
+.more-content {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.more-content-head { display: flex; flex-direction: column; gap: 4px; }
+
+.more-content-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--primary);
+}
+.more-content-eyebrow-dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--primary);
+  box-shadow: 0 0 0 4px var(--primary-cont);
+}
+
+.more-content-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  color: var(--text);
+}
+
+.more-content-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.more-content-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px 16px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  border-left-width: 3px;
+}
+.more-content-row--notification {
+  border-left-color: var(--primary);
+  background: linear-gradient(180deg, var(--primary-cont) 0%, var(--card) 60%);
+}
+.more-content-row--challenge {
+  border-left-color: var(--success, var(--primary));
+}
+.more-content-row--message {
+  border-left-color: var(--text-2);
+}
+
+/* "Your replies" sub-list shown inside a message card. */
+.more-content-row-replies {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.more-content-row-replies-eyebrow {
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+}
+.reply-bubble {
+  background: var(--card-alt);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.reply-bubble-text {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text);
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+.reply-bubble-media {
+  display: block;
+  max-width: 100%;
+  max-height: 240px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+}
+.reply-bubble-when {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.more-content-row-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.more-content-row-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-2);
+}
+.more-content-row-meta {
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.more-content-row-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+  line-height: 1.35;
+}
+.more-content-row-body {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-2);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+
+/* ===== ARCHIVE LIST (shared drawer list rows) ===== */
+.archive-list { display: flex; flex-direction: column; gap: 8px; }
+.archive-row-empty {
+  margin: 0;
+  padding: 18px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--text-2);
+  background: var(--card-alt);
+  border: 1px dashed var(--border-hi);
+  border-radius: var(--r-md);
+}
+.archive-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 14px;
+  background: var(--card-alt);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  text-align: left;
+  color: var(--text);
+}
+.archive-row--notification { border-left: 3px solid var(--primary); }
+.archive-row--daily-challenge,
+.archive-row--new-challenge { border-left: 3px solid var(--success, var(--primary)); }
+.archive-row--reply { border-left: 3px solid var(--primary-3, #a78bfa); }
+
+.archive-row-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+}
+.archive-row-eyebrow {
+  font-size: 10px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--text-2);
+}
+.archive-row-meta {
+  font-size: 11px; color: var(--text-muted); white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 60%;
+}
+.archive-row-meta strong { color: var(--text); font-weight: 700; }
+.archive-row-clock {
+  margin-left: 6px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.archive-row-title {
+  margin: 0; font-size: 14px; font-weight: 700; color: var(--text); line-height: 1.35;
+}
+.archive-row-kind {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-muted);
+  text-transform: lowercase;
+}
+.archive-row-body {
+  margin: 0; font-size: 12px; color: var(--text-2); line-height: 1.45; white-space: pre-wrap;
+  word-wrap: break-word;
+}
+.archive-row-media {
+  display: block;
+  max-width: 100%;
+  max-height: 220px;
+  border-radius: var(--r-md);
+  border: 1px solid var(--border);
+  background: var(--card);
+  margin-top: 4px;
+}
+audio.archive-row-media { width: 100%; }
+
+/* Day heading shown above each cluster of archive rows that share
+   the same local-date key. The heading is prominent so the user
+   can scan the archive by date; the date is NOT repeated on the
+   individual rows (per the user's spec). */
+.archive-day-heading {
+  margin: 14px 0 6px;
+  padding: 0 2px;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  color: var(--text);
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 6px;
+}
+.archive-day-heading:first-child { margin-top: 4px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .welcome-backdrop,
+  .welcome-dialog,
+  .snackbar { animation: none; }
+}
+
+/* ===== HAMBURGER BUTTON (app bar) ===== */
+.hamburger-btn {
+  width: 40px;
+  height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  background: var(--card);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  cursor: pointer;
+  transition: color .15s var(--ease), background .15s var(--ease), border-color .15s var(--ease);
+}
+.hamburger-btn:hover { color: var(--primary); background: var(--card-alt); border-color: var(--border-hi); }
+.hamburger-btn:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+
+/* ===== HERO ACTIONS (Edit username row) ===== */
+.hero-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+/* ===== DRAWER (right side, read-only gradebook) ===== */
+.drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  justify-content: flex-end;
+  z-index: 60;
+  animation: drawerFade .2s var(--ease);
+}
+.drawer-backdrop[hidden] { display: none; }
+@keyframes drawerFade { from { opacity: 0; } to { opacity: 1; } }
+
+.drawer {
+  width: min(420px, 100vw);
+  height: 100vh;
+  background: var(--card);
+  border-left: 1px solid var(--border);
+  box-shadow: -16px 0 40px rgba(0, 0, 0, 0.4);
+  display: flex;
+  flex-direction: column;
+  animation: drawerSlide .22s var(--ease);
+}
+@keyframes drawerSlide {
+  from { transform: translateX(20px); opacity: 0; }
+  to   { transform: translateX(0);    opacity: 1; }
+}
+
+.drawer-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 16px 18px;
+  border-bottom: 1px solid var(--border);
+  background: var(--card-header);
+  flex-shrink: 0;
+}
+.drawer-header h2 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.drawer-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  padding: 16px 18px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.drawer-context { margin: 0; font-size: 12px; color: var(--text-2); }
+
+.drawer-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.drawer-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  background: var(--card-alt);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  text-align: left;
+  font: inherit;
+  color: var(--text);
+  cursor: pointer;
+  transition: background .12s var(--ease), border-color .12s var(--ease);
+  min-height: 56px;
+}
+.drawer-row:hover { background: var(--primary-cont); border-color: var(--primary-3); }
+.drawer-row:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.drawer-row-avatar {
+  width: 36px; height: 36px;
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--on-primary);
+  font-weight: 800;
+  font-size: 13px;
+  flex-shrink: 0;
+}
+.drawer-row-text { flex: 1 1 auto; min-width: 0; }
+.drawer-row-name {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.drawer-row-meta { font-size: 12px; color: var(--text-2); }
+.drawer-row-score {
+  font-weight: 800;
+  font-size: 15px;
+  color: var(--primary);
+  flex-shrink: 0;
+}
+.drawer-row-empty {
+  padding: 24px 16px;
+  text-align: center;
+  color: var(--text-2);
+  font-size: 13px;
+  background: var(--card-alt);
+  border: 1px dashed var(--border-hi);
+  border-radius: var(--r-md);
+}
+
+.drawer-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.detail-stat-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  background: var(--card-alt);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+}
+.detail-stat-label { font-size: 12px; color: var(--text-2); text-transform: uppercase; letter-spacing: 0.05em; }
+.detail-stat-value { font-size: 16px; font-weight: 800; color: var(--text); }
+
+.history-rows {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.history-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 12px;
+  background: var(--card-alt);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  font-size: 13px;
+}
+.history-row-date { color: var(--text-2); }
+.history-row-points { font-weight: 800; color: var(--primary); }
+.history-row-empty { color: var(--text-muted); font-style: italic; justify-content: center; }
+
+.icon-btn {
+  width: 32px; height: 32px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-size: 18px; line-height: 1;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: background .15s var(--ease);
+}
+.icon-btn:hover { background: rgba(255, 255, 255, 0.12); }
+.icon-btn:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+
+/* ===== DIALOG (centered modal — Edit username) ===== */
+.dialog-backdrop {
+  position: fixed; inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 70;
+  padding: 20px;
+  animation: drawerFade .2s var(--ease);
+}
+.dialog-backdrop[hidden] { display: none; }
+
+.dialog {
+  max-width: 480px;
+  width: 100%;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--r-2xl);
+  box-shadow: 0 24px 64px rgba(0,0,0,.4);
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - 40px);
+  overflow: hidden;
+  animation: drawerSlide .22s var(--ease);
+}
+
+.dialog-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 18px 20px;
+  border-bottom: 1px solid var(--border);
+  background: var(--card-header);
+  flex-shrink: 0;
+}
+.dialog-header h2 {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.dialog-body {
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  background: var(--card);
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+.dialog-context { margin: 0; font-size: 13px; color: var(--text-2); line-height: 1.5; }
+.dialog-context strong { color: var(--text); }
+
+.dialog-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 16px 20px;
+  border-top: 1px solid var(--border);
+  background: var(--card);
+  flex-shrink: 0;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+/* The HTML `hidden` attribute sets `display: none`, but a more
+   specific selector like `.field { display: flex }` wins. Force
+   the hidden fields to actually hide — without this, the
+   "Add an image / Add a video / Add an audio" sections would all
+   be visible at once because their parent `.field` rule overrides
+   the [hidden] default. */
+.field[hidden] { display: none; }
+.field-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-2);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.text-input {
+  font: inherit;
+  font-size: 14px;
+  background: var(--card-alt);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  padding: 10px 12px;
+  outline: none;
+  transition: border-color .15s var(--ease), background .15s var(--ease);
+}
+.text-input:focus { border-color: var(--primary); background: var(--bg); }
+.text-input::placeholder { color: var(--text-muted); }
+
+.field-error {
+  margin: 0;
+  padding: 8px 12px;
+  background: var(--error-cont);
+  color: var(--error);
+  border: 1px solid var(--error);
+  border-radius: var(--r-md);
+  font-size: 13px;
+  font-weight: 600;
+}
+.field-error[hidden] { display: none; }
+
+@media (max-width: 720px) {
+  .drawer          { width: 100vw; }
+}
+
+/* ============================================================
+   MOBILE (≤ 480px) — small phones in portrait.
+   The 720px block above already covers the drawer at 100vw.
+   Here we bump sub-44px tap targets back UP (the 720px rule
+   accidentally shrunk .hamburger-btn to 36×36) and tighten
+   spacing.
+   ============================================================ */
+@media (max-width: 480px) {
+  /* App-bar tap targets: 44×44 across the board. The 720px rule
+     shrunk .hamburger-btn to 36×36 — we override that here. */
+  .hamburger-btn   { width: 44px; height: 44px; }
+  .icon-btn        { width: 44px; height: 44px; }
+
+  /* Sign-out pill is a sub-44px tap target on desktop. */
+  .signout-link    { min-height: 44px; padding: 12px 16px; font-size: 14px; }
+
+  /* Buttons and inputs: never below 44px tall. */
+  .btn, .text-input, .reply-media-pick, .reply-audio-controls .btn {
+    min-height: 44px;
+  }
+
+  /* Archive tabs: 12px font + 8px padding = ~34px tall, below 44. */
+  .archive-tab     { padding: 12px 10px; min-height: 44px; font-size: 13px; }
+
+  /* Welcome dialog: keep title from wrapping to 3+ lines on
+     a 360px screen. */
+  .welcome-title   { font-size: clamp(20px, 5.5vw, 24px); }
+  .welcome-hero    { padding: 24px 18px 18px; }
+  .welcome-body    { padding: 18px 18px 22px; }
+  .welcome-close   { width: 44px; height: 44px; top: 10px; right: 10px; }
+
+  /* Snackbars: respect iOS home indicator safe-area. */
+  .snackbar        { bottom: calc(20px + env(safe-area-inset-bottom, 0)); }
+}
+
+/* ============================================================
+   Reply dialog (Student) — used for challenges with a returnType
+   and for messages.
+   ============================================================ */
+.reply-audio-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.reply-audio-field[hidden] { display: none; }
+.reply-audio-controls {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  margin-top: 6px;
+}
+.reply-audio-controls #replyAudioRecordBtn,
+.reply-audio-controls #replyAudioStopBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  padding: 10px 12px;
+  background: var(--card-alt);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--text);
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease, transform 80ms ease;
+}
+.reply-audio-controls #replyAudioRecordBtn:hover,
+.reply-audio-controls #replyAudioStopBtn:hover,
+.reply-audio-controls #replyAudioRecordBtn:focus,
+.reply-audio-controls #replyAudioStopBtn:focus {
+  background: var(--card);
+  border-color: var(--primary);
+  outline: none;
+}
+.reply-audio-controls #replyAudioRecordBtn:active,
+.reply-audio-controls #replyAudioStopBtn:active {
+  transform: scale(0.98);
+}
+.reply-audio-record-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--error);
+  box-shadow: 0 0 0 3px rgba(255, 70, 70, 0.18);
+}
+.reply-audio-status {
+  font-size: 12px;
+  color: var(--text-2);
+  text-align: center;
+}
+.reply-audio-status.is-recording {
+  color: var(--error);
+  font-weight: 700;
+}
+.reply-media-preview {
+  margin-top: 8px;
+}
+.reply-media-preview img,
+.reply-media-preview video {
+  display: block;
+  max-width: 100%;
+  max-height: 240px;
+  border-radius: var(--r-md);
+  border: 1px solid var(--border);
+  background: var(--bg);
+}
+.reply-media-buttons {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  margin-top: 6px;
+}
+.reply-media-buttons .reply-media-pick {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  padding: 10px 12px;
+  background: var(--card-alt);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--text);
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease, transform 80ms ease;
+}
+.reply-media-buttons .reply-media-pick:hover,
+.reply-media-buttons .reply-media-pick:focus {
+  background: var(--card);
+  border-color: var(--primary);
+  outline: none;
+}
+.reply-media-buttons .reply-media-pick:active {
+  transform: scale(0.98);
+}
+.reply-media-buttons .reply-media-pick svg {
+  flex: 0 0 auto;
+  color: var(--primary);
+}
+.reply-media-clear {
+  margin-top: 6px;
+  font-size: 13px;
+  padding: 6px 10px;
+}
+
+/* Live camera capture — opens the device camera in-page instead
+   of dropping the student into the OS file picker. Used for
+   "Take a pic" and "Record video" buttons. */
+.reply-camera-field { /* extends .field */ }
+.reply-camera-stage {
+  background: #000;
+  border-radius: var(--r-md);
+  overflow: hidden;
+  border: 1px solid var(--border);
+  aspect-ratio: 4 / 3;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.reply-camera-preview {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  background: #000;
+}
+.reply-camera-buttons {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+.reply-camera-status {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: var(--text-2);
+}
+.field-help {
+  margin: 4px 0 0;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+input[type="file"].text-input {
+  padding: 8px 10px;
+  cursor: pointer;
+}
+
+/* ============================================================
+   Archive drawer — per-student tab.
+   ============================================================ */
+.archive-tabs {
+  display: flex;
+  gap: 6px;
+  padding: 4px;
+  background: var(--card-alt);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+}
+.archive-tab {
+  flex: 1 1 auto;
+  appearance: none;
+  background: transparent;
+  border: 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-2);
+  cursor: pointer;
+  transition: background .12s var(--ease), color .12s var(--ease);
+}
+.archive-tab:hover { color: var(--text); }
+.archive-tab.is-active {
+  background: var(--primary-cont);
+  color: var(--primary);
+}
+
+/* ============================================================
+   More-from-your-teacher — message cards and the per-card
+   "Your replies" sub-list. Reused patterns from the notification
+   card so they look the same.
+   ============================================================ */
+.message-replies {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.message-replies-eyebrow {
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+}
+.message-reply {
+  background: var(--card-alt);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.message-reply-text {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text);
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+.message-reply-media img,
+.message-reply-media video {
+  display: block;
+  max-width: 100%;
+  max-height: 240px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+}
+.message-reply-meta {
+  font-size: 11px;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* ============================================================
+   Challenge card — Submit button (vs Mark done).
+   When a challenge has a returnType other than "text", the card
+   shows a "Submit" button instead of the legacy "Mark done".
+   ============================================================ */
+.challenge-submit-btn {
+  appearance: none;
+  border: 0;
+  cursor: pointer;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 800;
+  padding: 12px 16px;
+  border-radius: var(--r-md);
+  background: var(--primary);
+  color: var(--on-primary);
+  width: 100%;
+  text-align: center;
+  transition: background .12s var(--ease);
+}
+.challenge-submit-btn:hover { background: var(--primary-2); }
+.challenge-submit-btn:disabled { opacity: .55; cursor: not-allowed; }
+.challenge-submit-hint {
+  margin: 0;
+  font-size: 11px;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+/* ============================================================
+   Audio recorder "recording" state — pulsing dot.
+   ============================================================ */
+@keyframes pulse-rec {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.35; }
+}
+.is-recording-dot {
+  display: inline-block;
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--error);
+  margin-right: 6px;
+  animation: pulse-rec 1s ease-in-out infinite;
+  vertical-align: middle;
+}
