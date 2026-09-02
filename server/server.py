@@ -182,16 +182,27 @@ def _storage_init():
     global _mongo_client, _mongo_db, _storage_mode
     uri = (os.environ.get("MONGODB_URI") or "").strip()
     if _HAVE_PYMONGO and uri:
-        # Try a few TLS configs. Python 3.14 ships with OpenSSL 3.x which can
-        # hit a `TLSV1_ALERT_INTERNAL_ERROR` against older Atlas M0 clusters
-        # (the OCSP stapling response is rejected by the cluster's TLS
-        # stack). Disabling OCSP endpoint checks usually unblocks it without
-        # weakening auth. The first attempt uses defaults; if that fails we
-        # retry with the relaxed config.
-        attempts = [
-            ("default", {}),
-            ("no-ocsp", {"tlsDisableOCSPEndpointCheck": True}),
-        ]
+        # Python 3.14 ships with OpenSSL 3.x, which can hit a
+        # `TLSV1_ALERT_INTERNAL_ERROR` against older Atlas M0 clusters
+        # (the cluster rejects the modern cipher suites / TLS extension
+        # ordering that 3.14's OpenSSL sends). We try several known-good
+        # workarounds in order, falling back to JSON if all fail.
+        attempts = []
+        # (1) pymongo defaults — works on older Python, often fails on 3.14.
+        attempts.append(("default", {}))
+        # (2) Disable OCSP endpoint check.
+        attempts.append(("no-ocsp", {"tlsDisableOCSPEndpointCheck": True}))
+        # (3) Force TLS 1.2 only (some M0 clusters don't support TLS 1.3
+        # with OpenSSL 3.x).
+        try:
+            import ssl as _ssl
+            _ctx = _ssl.SSLContext(_ssl.PROTOCOL_TLS_CLIENT)
+            _ctx.minimum_version = _ssl.TLSVersion.TLSv1_2
+            _ctx.maximum_version = _ssl.TLSVersion.TLSv1_2
+            attempts.append(("tls1.2-only", {"ssl_context": _ctx}))
+        except Exception:
+            pass
+
         for label, opts in attempts:
             try:
                 kwargs = dict(
@@ -209,7 +220,8 @@ def _storage_init():
                 print(f"[store] Mongo backend ready (db={db_name})", file=sys.stderr)
                 return
             except Exception as e:
-                print(f"[store] Mongo init attempt {label} failed ({e})", file=sys.stderr)
+                err_short = str(e).split('\n')[0][:200]
+                print(f"[store] Mongo init attempt {label} failed ({err_short})", file=sys.stderr)
                 _mongo_client = None
                 _mongo_db = None
     print(f"[store] Using local JSON files in {DATA_DIR}", file=sys.stderr)
