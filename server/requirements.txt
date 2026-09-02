@@ -1,2 +1,2 @@
-pymongo==4.10.1
+pymongo==4.13.0
 resend==2.13.0

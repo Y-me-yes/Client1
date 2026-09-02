@@ -182,19 +182,36 @@ def _storage_init():
     global _mongo_client, _mongo_db, _storage_mode
     uri = (os.environ.get("MONGODB_URI") or "").strip()
     if _HAVE_PYMONGO and uri:
-        try:
-            _mongo_client = MongoClient(uri, serverSelectionTimeoutMS=5000, uuidRepresentation="standard")
-            # Force a round-trip to fail fast if creds are wrong.
-            _mongo_client.admin.command("ping")
-            db_name = os.environ.get("MONGODB_DB") or "client1"
-            _mongo_db = _mongo_client[db_name]
-            _storage_mode = "mongo"
-            print(f"[store] Mongo backend ready (db={db_name})", file=sys.stderr)
-            return
-        except Exception as e:
-            print(f"[store] Mongo init failed ({e}); falling back to local JSON.", file=sys.stderr)
-            _mongo_client = None
-            _mongo_db = None
+        # Try a few TLS configs. Python 3.14 ships with OpenSSL 3.x which can
+        # hit a `TLSV1_ALERT_INTERNAL_ERROR` against older Atlas M0 clusters
+        # (the OCSP stapling response is rejected by the cluster's TLS
+        # stack). Disabling OCSP endpoint checks usually unblocks it without
+        # weakening auth. The first attempt uses defaults; if that fails we
+        # retry with the relaxed config.
+        attempts = [
+            ("default", {}),
+            ("no-ocsp", {"tlsDisableOCSPEndpointCheck": True}),
+        ]
+        for label, opts in attempts:
+            try:
+                kwargs = dict(
+                    serverSelectionTimeoutMS=5000,
+                    uuidRepresentation="standard",
+                )
+                kwargs.update(opts)
+                _mongo_client = MongoClient(uri, **kwargs)
+                _mongo_client.admin.command("ping")
+                db_name = os.environ.get("MONGODB_DB") or "client1"
+                _mongo_db = _mongo_client[db_name]
+                _storage_mode = "mongo"
+                if label != "default":
+                    print(f"[store] Mongo connected using {label} TLS profile", file=sys.stderr)
+                print(f"[store] Mongo backend ready (db={db_name})", file=sys.stderr)
+                return
+            except Exception as e:
+                print(f"[store] Mongo init attempt {label} failed ({e})", file=sys.stderr)
+                _mongo_client = None
+                _mongo_db = None
     print(f"[store] Using local JSON files in {DATA_DIR}", file=sys.stderr)
     _storage_mode = "json"
 
