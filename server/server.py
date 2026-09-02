@@ -182,24 +182,25 @@ def _storage_init():
     global _mongo_client, _mongo_db, _storage_mode
     uri = (os.environ.get("MONGODB_URI") or "").strip()
     if _HAVE_PYMONGO and uri:
-        # Python 3.14 ships with OpenSSL 3.x, which can hit a
-        # `TLSV1_ALERT_INTERNAL_ERROR` against older Atlas M0 clusters
-        # (the cluster rejects the modern cipher suites / TLS extension
-        # ordering that 3.14's OpenSSL sends). We try several known-good
-        # workarounds in order, falling back to JSON if all fail.
+        # Some Atlas M0 clusters have a TLS config that triggers
+        # `TLSV1_ALERT_INTERNAL_ERROR` with the system OpenSSL CA
+        # bundle (a known issue with older M0 clusters and newer
+        # Python). The fix is to explicitly point pymongo at certifi's
+        # CA bundle, which contains the latest Atlas CA chain.
         attempts = []
-        # (1) pymongo defaults — works on older Python, often fails on 3.14.
         attempts.append(("default", {}))
-        # (2) Disable OCSP endpoint check.
         attempts.append(("no-ocsp", {"tlsDisableOCSPEndpointCheck": True}))
-        # (3) Force TLS 1.2 only (some M0 clusters don't support TLS 1.3
-        # with OpenSSL 3.x).
         try:
-            import ssl as _ssl
-            _ctx = _ssl.SSLContext(_ssl.PROTOCOL_TLS_CLIENT)
-            _ctx.minimum_version = _ssl.TLSVersion.TLSv1_2
-            _ctx.maximum_version = _ssl.TLSVersion.TLSv1_2
-            attempts.append(("tls1.2-only", {"ssl_context": _ctx}))
+            import certifi as _certifi
+            attempts.append(("certifi-ca", {"tlsCAFile": _certifi.where()}))
+        except Exception:
+            pass
+        try:
+            import certifi as _certifi
+            attempts.append(("certifi-ca+no-ocsp", {
+                "tlsCAFile": _certifi.where(),
+                "tlsDisableOCSPEndpointCheck": True,
+            }))
         except Exception:
             pass
 
