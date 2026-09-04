@@ -1,0 +1,81 @@
+name: Fix reply archive lifecycle
+on:
+  workflow_dispatch:
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Patch reply lifecycle
+        shell: python
+        run: |
+          from pathlib import Path
+
+          # ---------------- server.py ----------------
+          p = Path("server/server.py")
+          s = p.read_text(encoding="utf-8")
+
+          old_get = '''        if parent_id:\n            items = [r for r in replies if isinstance(r, dict)\n                     and str(r.get("parentId") or "") == parent_id]\n            items.sort(key=lambda r: r.get("createdAt") or 0)\n            return _send(self, 200, {"ok": True, "items": items})\n        if student:\n            items = [r for r in replies if isinstance(r, dict)\n                     and str(r.get("studentUsername") or "").strip().lower() == student]\n            items.sort(key=lambda r: r.get("createdAt") or 0)\n            return _send(self, 200, {"ok": True, "items": items})\n'''
+          new_get = '''        if parent_id:\n            items = [r for r in replies if isinstance(r, dict)\n                     and str(r.get("parentId") or "") == parent_id]\n            items.sort(key=lambda r: r.get("createdAt") or 0)\n            return _send(self, 200, {"ok": True, "items": items})\n        if student:\n            items = [r for r in replies if isinstance(r, dict)\n                     and str(r.get("studentUsername") or "").strip().lower() == student]\n            items.sort(key=lambda r: r.get("createdAt") or 0)\n            return _send(self, 200, {"ok": True, "items": items})\n'''
+          # Keep the student/parent reads unchanged; archive filtering is handled\n          # by the teacher no-filter response below.
+          assert old_get in s, "GET replies block not found"
+          s = s.replace(old_get, new_get, 1)
+
+          old_group = '''        by_student: "dict[str, list]" = {}\n        for r in replies:\n            if not isinstance(r, dict):\n                continue\n            u = str(r.get("studentUsername") or "").strip()\n            if not u:\n                continue\n            by_student.setdefault(u, []).append(r)\n        for u in by_student:\n            by_student[u].sort(key=lambda r: r.get("createdAt") or 0, reverse=True)\n        return _send(self, 200, {"ok": True, "byStudent": by_student})\n\n    def _post_signout(self):\n'''
+          new_group = '''        by_student: "dict[str, list]" = {}\n        for r in replies:\n            if not isinstance(r, dict):\n                continue\n            if r.get("archived"):\n                continue\n            u = str(r.get("studentUsername") or "").strip()\n            if not u:\n                continue\n            by_student.setdefault(u, []).append(r)\n        for u in by_student:\n            by_student[u].sort(key=lambda r: r.get("createdAt") or 0, reverse=True)\n        return _send(self, 200, {"ok": True, "byStudent": by_student})\n\n    def _post_reply_archive(self):\n        """POST /api/replies/archive { ids: [...], teacherPassword }\n        Permanently marks the specified teacher-reviewed replies as archived.\n        The archive is persisted server-side so reloads do not restore them\n        to the active Replies section.\n        """\n        try:\n            body = _read_json(self)\n        except Exception:\n            return _send(self, 400, {"error": "Invalid request body."})\n        err = self._require_teacher(body.get("teacherPassword"))\n        if err is not None:\n            return _send(self, err[0], err[1])\n\n        raw_ids = body.get("ids")\n        if not isinstance(raw_ids, list):\n            return _send(self, 400, {"error": "Reply ids are required."})\n        ids = {str(x).strip() for x in raw_ids if str(x).strip()}\n        if not ids:\n            return _send(self, 200, {"ok": True, "archived": 0})\n\n        now_ms = _rl_now()\n        with _lock:\n            replies = load_replies()\n            if not isinstance(replies, list):\n                replies = []\n            archived = 0\n            for r in replies:\n                if not isinstance(r, dict) or str(r.get("id") or "") not in ids:\n                    continue\n                if r.get("archived"):\n                    continue\n                r["archived"] = True\n                r["archivedAt"] = now_ms\n                r["archiveReason"] = "teacher-reviewed"\n                archived += 1\n            save_replies(replies)\n\n        return _send(self, 200, {"ok": True, "archived": archived})\n\n    def _get_reply_archive(self):\n        """GET /api/replies/archive — teacher's persisted reply archive."""\n        with _lock:\n            replies = load_replies()\n        if not isinstance(replies, list):\n            replies = []\n        by_student: "dict[str, list]" = {}\n        for r in replies:\n            if not isinstance(r, dict) or not r.get("archived"):\n                continue\n            u = str(r.get("studentUsername") or "").strip()\n            if not u:\n                continue\n            by_student.setdefault(u, []).append(r)\n        for u in by_student:\n            by_student[u].sort(key=lambda r: r.get("archivedAt") or r.get("createdAt") or 0, reverse=True)\n        return _send(self, 200, {"ok": True, "byStudent": by_student})\n\n    def _post_signout(self):\n'''
+          assert old_group in s, "GET grouping block not found"
+          s = s.replace(old_group, new_group, 1)
+
+          old_row = '''                "mediaSize": media_size,\n                "createdAt": now_ms,\n            }\n'''
+          new_row = '''                "mediaSize": media_size,\n                "createdAt": now_ms,\n                "archived": False,\n                "archivedAt": None,\n                "archiveReason": None,\n            }\n'''
+          assert old_row in s, "reply row block not found"
+          s = s.replace(old_row, new_row, 1)
+
+          # Route the archive endpoints in do_POST / do_GET by inserting\n          # alongside the existing replies routes. Match the literal route\n          # checks already present in this codebase.
+          old_post_route = '''        if path == "/api/replies":\n            return self._post_replies()\n'''
+          new_post_route = '''        if path == "/api/replies":\n            return self._post_replies()\n        if path == "/api/replies/archive":\n            return self._post_reply_archive()\n'''
+          assert old_post_route in s, "POST replies route not found"
+          s = s.replace(old_post_route, new_post_route, 1)
+
+          old_get_route = '''        if path == "/api/replies":\n            return self._get_replies()\n'''
+          new_get_route = '''        if path == "/api/replies":\n            return self._get_replies()\n        if path == "/api/replies/archive":\n            return self._get_reply_archive()\n'''
+          assert old_get_route in s, "GET replies route not found"
+          s = s.replace(old_get_route, new_get_route, 1)
+
+          p.write_text(s, encoding="utf-8")
+
+          # ---------------- Teacher app ----------------
+          p = Path("Teacher's/js/app.js")
+          s = p.read_text(encoding="utf-8")
+
+          old_state = '''    // Per-student "last seen" timestamps. The Replies icon shows a\n    // badge with the count of replies newer than the last time the\n    // teacher opened that student's replies dialog. Once the dialog\n    // is opened (and even after closing), the badge clears — the\n    // teacher is now caught up. New replies arriving later will\n    // re-increment the badge above the recorded timestamp.\n    repliesSeenAt: {},\n    repliesDialog: { open: false, student: null, items: [], view: 'today' /* or 'archive' */ },\n'''
+          new_state = '''    // Replies stay active until the teacher closes the Replies popup.\n    // The server then marks those exact replies archived so the state\n    // survives reloads and the badge disappears permanently.\n    repliesDialog: { open: false, student: null, items: [], view: 'today', openedReplyIds: [] },\n'''
+          assert old_state in s, "reply state block not found"
+          s = s.replace(old_state, new_state, 1)
+
+          old_persist = '''        // Persist the "last seen" timestamps too — without this,\n        // a single page reload would re-show every past reply as\n        // if it were brand new (the badge counts replies whose\n        // createdAt > seenAt).\n        repliesSeenAt: state.repliesSeenAt || {},\n'''
+          new_persist = ''''''
+          assert old_persist in s, "reply persistence block not found"
+          s = s.replace(old_persist, new_persist, 1)
+
+          old_open = '''    openRepliesDialog(username) {\n      const u = String(username || '').trim();\n      if (!u) return;\n      const nowMs = Date.now();\n      // Mark this student's replies as seen as of NOW. The badge will\n      // drop to zero immediately. Any reply that arrives after this\n      // timestamp will re-increment the badge the next time renderGradebook\n      // runs.\n      const list = (state.replies.byStudent && state.replies.byStudent[u]) || [];\n      update(s => {\n        s.repliesSeenAt = { ...(s.repliesSeenAt || {}), [u]: nowMs };\n        s.repliesDialog = { open: true, student: u, items: list, view: 'today' };\n      });\n      if (!state.replies.byStudent || Object.keys(state.replies.byStudent).length === 0) {\n        return actions.loadReplies();\n      }\n    },\n    closeRepliesDialog() {\n      // The "seen" timestamp was already recorded when the dialog\n      // opened, so closing the dialog doesn't need to do anything\n      // extra. Just flip the visibility.\n      update(s => { s.repliesDialog = { open: false, student: null, items: [], view: 'today' }; });\n    },\n'''
+          new_open = '''    openRepliesDialog(username) {\n      const u = String(username || '').trim();\n      if (!u) return;\n      const list = (state.replies.byStudent && state.replies.byStudent[u]) || [];\n      const openedReplyIds = list.map(r => r && r.id).filter(Boolean);\n      update(s => {\n        s.repliesDialog = { open: true, student: u, items: list, view: 'today', openedReplyIds };\n      });\n      if (!state.replies.byStudent || Object.keys(state.replies.byStudent).length === 0) {\n        return actions.loadReplies();\n      }\n    },\n    closeRepliesDialog() {\n      const ids = (state.repliesDialog && state.repliesDialog.openedReplyIds) || [];\n      const student = state.repliesDialog && state.repliesDialog.student;\n      update(s => { s.repliesDialog = { open: false, student: null, items: [], view: 'today', openedReplyIds: [] }; });\n      if (!ids.length) return;\n\n      getTeacherPassword().then(teacherPassword => {\n        if (!teacherPassword) {\n          update(s => { s.snackbar = { id: Date.now(), message: "Couldn't archive the replies: teacher sign-in expired" }; });\n          return;\n        }\n        return fetch(API_BASE + '/api/replies/archive', {\n          method: 'POST',\n          cache: 'no-store',\n          headers: { 'Content-Type': 'application/json' },\n          body: JSON.stringify({ ids, teacherPassword }),\n        })\n          .then(res => res.json().catch(() => ({})).then(data => ({ res, data })))\n          .then(({ res, data }) => {\n            if (!res.ok || !data.ok) throw new Error(data.error || ('HTTP ' + res.status));\n            // Remove only the replies that were actually opened. A new reply\n            // that arrived while the popup was open remains active.\n            const idSet = new Set(ids);\n            update(s => {\n              const current = s.replies.byStudent || {};\n              const next = { ...current };\n              if (student && Array.isArray(next[student])) {\n                next[student] = next[student].filter(r => !idSet.has(r && r.id));\n                if (!next[student].length) delete next[student];\n              }\n              s.replies.byStudent = next;\n            });\n          })\n          .catch(err => {\n            console.warn('archive replies failed:', err);\n            actions.loadReplies();\n            update(s => { s.snackbar = { id: Date.now(), message: "Couldn't archive the replies" }; });\n          });\n      });\n    },\n'''
+          assert old_open in s, "reply open/close block not found"
+          s = s.replace(old_open, new_open, 1)
+
+          old_archive = '''    openRepliesArchiveDialog(username) {\n      const u = String(username || '').trim();\n      if (!u) return;\n      const list = (state.replies.byStudent && state.replies.byStudent[u]) || [];\n      update(s => {\n        s.repliesDialog = { open: true, student: u, items: list, view: 'archive' };\n      });\n      if (!state.replies.byStudent || Object.keys(state.replies.byStudent).length === 0) {\n        return actions.loadReplies();\n      }\n    },\n'''
+          new_archive = '''    openRepliesArchiveDialog(username) {\n      const u = String(username || '').trim();\n      if (!u) return;\n      fetch(API_BASE + '/api/replies/archive', { cache: 'no-store' })\n        .then(res => { if (!res.ok) throw new Error('HTTP ' + res.status); return res.json(); })\n        .then(data => {\n          const by = (data && data.byStudent && typeof data.byStudent === 'object') ? data.byStudent : {};\n          const list = Array.isArray(by[u]) ? by[u] : [];\n          update(s => {\n            s.repliesDialog = { open: true, student: u, items: list, view: 'archive', openedReplyIds: [] };\n          });\n        })\n        .catch(err => {\n          console.warn('load reply archive failed:', err);\n          update(s => { s.snackbar = { id: Date.now(), message: "Couldn't load the reply archive" }; });\n        });\n    },\n'''
+          assert old_archive in s, "reply archive dialog block not found"
+          s = s.replace(old_archive, new_archive, 1)
+
+          old_badge = '''      const list = (state.replies.byStudent && state.replies.byStudent[s.studentName]) || [];\n      if (!list.length) return '';\n      const seenAt = (state.repliesSeenAt && state.repliesSeenAt[s.studentName]) || 0;\n      const unseen = list.filter(r => (Number(r.createdAt) || 0) > seenAt).length;\n      if (!unseen) return '';\n      return `<span class="replies-badge" aria-label="${unseen} new replies">${unseen > 99 ? '99+' : unseen}</span>`;\n'''
+          new_badge = '''      const list = (state.replies.byStudent && state.replies.byStudent[s.studentName]) || [];\n      if (!list.length) return '';\n      const count = list.length;\n      return `<span class="replies-badge" aria-label="${count} new replies">${count > 99 ? '99+' : count}</span>`;\n'''
+          assert old_badge in s, "reply badge block not found"
+          s = s.replace(old_badge, new_badge, 1)
+
+          # Any reset/close literals elsewhere that construct repliesDialog\n          # should include the new openedReplyIds field only where the old\n          # exact shape is present; the runtime tolerates the missing field.\n          p.write_text(s, encoding="utf-8")
+
+          print("Reply lifecycle patch applied")
