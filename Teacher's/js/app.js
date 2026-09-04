@@ -1746,15 +1746,6 @@
     $('#searchInput').addEventListener('input', e => actions.setSearch(e.target.value));
     $('#sortSelect').addEventListener('change', e => actions.setSort(e.target.value));
     $('#copyAllBtn').addEventListener('click', () => actions.copyAll());
-    $('#copyLoginLinkBtn').addEventListener('click', async () => {
-      const url = 'http://localhost:8001/';
-      try {
-        await navigator.clipboard.writeText(url);
-        update(s => { s.snackbar = { id: Date.now(), message: 'Login page link copied — paste in WhatsApp' }; });
-      } catch (err) {
-        update(s => { s.snackbar = { id: Date.now(), message: "Couldn't copy. The link is " + url }; });
-      }
-    });
     $('#docsBtn').addEventListener('click', () => actions.openDocs());
     $('#memberStatusBtn').addEventListener('click', () => actions.openMemberDialog('active'));
 
