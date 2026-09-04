@@ -1,4 +1,4 @@
-name: One-off remove teacher share button
+name: One-off teacher cleanup
 
 on:
   push:
@@ -9,7 +9,7 @@ permissions:
   contents: write
 
 jobs:
-  patch:
+  cleanup:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -19,22 +19,37 @@ jobs:
         shell: python
         run: |
           from pathlib import Path
-          import re
 
           path = Path("Teacher's/index.html")
           text = path.read_text(encoding="utf-8-sig")
-          pattern = r'\n\s*<button id="copyLoginLinkBtn"\b[\s\S]*?</button>\n'
-          text2, count = re.subn(pattern, '\n', text, count=1)
-          if count != 1:
-              raise SystemExit("Teacher Share button was not found; no change made.")
-          path.write_text(text2, encoding="utf-8")
+          start = text.find('<button id="copyLoginLinkBtn"')
+          if start == -1:
+              raise SystemExit("Teacher Share button was not found.")
+          end = text.find('</button>', start)
+          if end == -1:
+              raise SystemExit("Teacher Share button closing tag was not found.")
+          end += len('</button>')
+          text = text[:start] + text[end:]
+          path.write_text(text, encoding="utf-8")
 
-      - name: Remove this temporary workflow and commit
+      - name: Commit Share removal
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "Teacher's/index.html"
+          git commit -m "Remove Share button from teacher dashboard"
+          git push origin HEAD:main
+
+      - name: Delete temporary backup branch
+        shell: bash
+        run: |
+          git push origin --delete "backup/teacher-delete-before-fix-2026-09-04"
+
+      - name: Remove this temporary workflow
         shell: bash
         run: |
           rm -f .github/workflows/one-off-remove-share-button.yml
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
-          git commit -m "Remove Share button from teacher dashboard"
-          git push
+          git commit -m "Remove temporary teacher cleanup workflow"
+          git push origin HEAD:main
