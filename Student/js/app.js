@@ -1391,21 +1391,8 @@
 
   // ---------------- Events ----------------
   function wireEvents() {
-    // Sign out: clear the URL ?u= and reload the page so the user
-    // lands on the "Sign in first" view. We used to redirect to
-    // http://localhost:8001/ (the Login page), but that 1) only works
-    // if the Login server is currently running, 2) punts the user
-    // away from the Student app to a different origin, and 3) is
-    // confusing if they want to sign in as someone else but the
-    // Login window isn't open. Reloading with no ?u= is self-
-    // contained: the page shows the "Sign in first" card with a
-    // link to the Login page if they want it.
-    // Sign out: clear the URL ?u= and reload the page so the user
-    // lands on the "Sign in first" view. We also fire-and-forget a
-    // POST /api/signout with `keepalive: true` so the server has a
-    // chance to copy every active notification the student viewed
-    // into their per-student archive before the page transitions.
-    // `keepalive` lets the request survive the unload.
+    // Sign out: archive the student's viewed content, clear the signed-in
+    // URL state, and immediately take them back to the Login page.
     $('#signoutBtn').addEventListener('click', () => {
       const u = state.username;
       if (u) {
@@ -1420,14 +1407,9 @@
         } catch (err) { /* ignore */ }
       }
       try {
-        const url = new URL(window.location.href);
-        url.searchParams.delete('u');
-        // Use replace() so the back button doesn't drop them back
-        // into the signed-in view.
-        window.location.replace(url.toString());
+        window.location.replace('../Login/index.html');
       } catch (err) {
-        // Fall back to a hard reload of the same page.
-        window.location.reload();
+        window.location.href = '../Login/index.html';
       }
     });
 
