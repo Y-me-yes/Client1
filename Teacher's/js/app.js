@@ -750,43 +750,48 @@
     openRepliesDialog(username) {
       const u = String(username || '').trim();
       if (!u) return;
-      const nowMs = Date.now();
-      // Mark this student's replies as seen as of NOW. The badge will
-      // drop to zero immediately. Any reply that arrives after this
-      // timestamp will re-increment the badge the next time renderGradebook
-      // runs.
       const list = (state.replies.byStudent && state.replies.byStudent[u]) || [];
-      update(s => {
-        s.repliesSeenAt = { ...(s.repliesSeenAt || {}), [u]: nowMs };
-        s.repliesDialog = { open: true, student: u, items: list, view: 'today' };
-      });
-      // Lazy-load if we don't have any replies yet. Once loaded, the
-      // dialog is a pure function of state.
-      if (!state.replies.byStudent || Object.keys(state.replies.byStudent).length === 0) {
-        return actions.loadReplies();
-      }
+      const openedReplyIds = list.map(r => r && r.id).filter(Boolean);
+      update(s => { s.repliesDialog = { open: true, student: u, items: list, view: 'today', openedReplyIds }; });
+      if (!state.replies.byStudent || Object.keys(state.replies.byStudent).length === 0) return actions.loadReplies();
     },
     closeRepliesDialog() {
-      // The "seen" timestamp was already recorded when the dialog
-      // opened, so closing the dialog doesn't need to do anything
-      // extra. Just flip the visibility.
-      update(s => { s.repliesDialog = { open: false, student: null, items: [], view: 'today' }; });
+      const dlg = state.repliesDialog || {};
+      const ids = Array.isArray(dlg.openedReplyIds) ? dlg.openedReplyIds : [];
+      const student = dlg.student;
+      update(s => { s.repliesDialog = { open: false, student: null, items: [], view: 'today', openedReplyIds: [] }; });
+      if (!ids.length) return;
+      fetch(API_BASE + '/api/replies/archive', {
+        method: 'POST',
+        cache: 'no-store',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids })
+      })
+        .then(res => res.json().catch(() => ({})).then(data => ({ res, data })))
+        .then(({ res, data }) => {
+          if (!res.ok || !data.ok) throw new Error(data.error || ('HTTP ' + res.status));
+          const idSet = new Set(ids);
+          update(s => {
+            const next = { ...(s.replies.byStudent || {}) };
+            if (student && Array.isArray(next[student])) {
+              next[student] = next[student].filter(r => !idSet.has(r && r.id));
+              if (!next[student].length) delete next[student];
+            }
+            s.replies.byStudent = next;
+          });
+        })
+        .catch(err => { console.warn('archive replies failed:', err); actions.loadReplies(); });
     },
-    // Open the per-student reply archive popup. This shows ALL
-    // replies from this student (not just today's), grouped by date
-    // with no per-reply timestamps. Triggered by the box/archive
-    // icon on each gradebook row, distinct from the speech-bubble
-    // "Replies" icon which shows only today's replies.
     openRepliesArchiveDialog(username) {
       const u = String(username || '').trim();
       if (!u) return;
-      const list = (state.replies.byStudent && state.replies.byStudent[u]) || [];
-      update(s => {
-        s.repliesDialog = { open: true, student: u, items: list, view: 'archive' };
-      });
-      if (!state.replies.byStudent || Object.keys(state.replies.byStudent).length === 0) {
-        return actions.loadReplies();
-      }
+      fetch(API_BASE + '/api/replies/archive', { cache: 'no-store' })
+        .then(res => { if (!res.ok) throw new Error('HTTP ' + res.status); return res.json(); })
+        .then(data => {
+          const by = (data && data.byStudent && typeof data.byStudent === 'object') ? data.byStudent : {};
+          update(s => { s.repliesDialog = { open: true, student: u, items: Array.isArray(by[u]) ? by[u] : [], view: 'archive', openedReplyIds: [] }; });
+        })
+        .catch(err => console.warn('load reply archive failed:', err));
     },
 
 

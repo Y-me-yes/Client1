@@ -693,6 +693,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if self.path == "/api/student-archive" or self.path.startswith("/api/student-archive?"):
             return self._get_student_archive()
         # /api/replies?parentId=X OR /api/replies?student=X
+        if self.path == "/api/replies/archive":
+            return self._get_reply_archive()
         if self.path == "/api/replies" or self.path.startswith("/api/replies?"):
             return self._get_replies()
         # /api/challenge/done?username=X
@@ -2284,7 +2286,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         # each group are sorted newest-first.
         by_student: "dict[str, list]" = {}
         for r in replies:
-            if not isinstance(r, dict):
+            if not isinstance(r, dict) or r.get("archived"):
                 continue
             u = str(r.get("studentUsername") or "").strip()
             if not u:
@@ -2292,6 +2294,51 @@ class Handler(http.server.BaseHTTPRequestHandler):
             by_student.setdefault(u, []).append(r)
         for u in by_student:
             by_student[u].sort(key=lambda r: r.get("createdAt") or 0, reverse=True)
+        return _send(self, 200, {"ok": True, "byStudent": by_student})
+
+    def _post_reply_archive(self):
+        try:
+            body = _read_json(self)
+        except Exception:
+            return _send(self, 400, {"error": "Invalid request body."})
+        raw_ids = body.get("ids")
+        if not isinstance(raw_ids, list):
+            return _send(self, 400, {"error": "Reply ids are required."})
+        ids = {str(x).strip() for x in raw_ids if str(x).strip()}
+        if not ids:
+            return _send(self, 200, {"ok": True, "archived": 0})
+        now_ms = _rl_now()
+        with _lock:
+            replies = load_replies()
+            if not isinstance(replies, list):
+                replies = []
+            count = 0
+            for r in replies:
+                if not isinstance(r, dict) or str(r.get("id") or "") not in ids:
+                    continue
+                if r.get("archived"):
+                    continue
+                r["archived"] = True
+                r["archivedAt"] = now_ms
+                r["archiveReason"] = "teacher-reviewed"
+                count += 1
+            save_replies(replies)
+        return _send(self, 200, {"ok": True, "archived": count})
+
+    def _get_reply_archive(self):
+        with _lock:
+            replies = load_replies()
+        if not isinstance(replies, list):
+            replies = []
+        by_student = {}
+        for r in replies:
+            if not isinstance(r, dict) or not r.get("archived"):
+                continue
+            u = str(r.get("studentUsername") or "").strip()
+            if u:
+                by_student.setdefault(u, []).append(r)
+        for u in by_student:
+            by_student[u].sort(key=lambda r: r.get("archivedAt") or r.get("createdAt") or 0, reverse=True)
         return _send(self, 200, {"ok": True, "byStudent": by_student})
 
     def _post_signout(self):
@@ -2585,6 +2632,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 "mediaMime": media_mime,
                 "mediaSize": media_size,
                 "createdAt": now_ms,
+                "archived": False,
+                "archivedAt": None,
+                "archiveReason": None,
             }
             replies = load_replies()
             if not isinstance(replies, list):
