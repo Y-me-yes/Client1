@@ -646,8 +646,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return _send(self, 200, {"ok": True, "storage": _storage_mode})
         # Debug: reveal which env vars the server actually loaded. Gated
         # by a query string secret so random visitors can't read them.
-        if self.path == "/api/_env":
-            from urllib.parse import urlparse, parse_qs
+        # self.path includes the query string, so we strip it before the
+        # exact-match check.
+        from urllib.parse import urlparse, parse_qs
+        _debug_path = urlparse(self.path).path
+        if _debug_path == "/api/_env":
             qs = parse_qs(urlparse(self.path).query)
             if qs.get("k", [None])[0] != "client1-debug":
                 return _send(self, 404, {"error": "Not found."})
