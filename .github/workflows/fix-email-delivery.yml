@@ -1,6 +1,7 @@
 name: Fix email delivery handling
 on:
-  workflow_dispatch:
+  push:
+    branches: [main]
 jobs:
   fix:
     runs-on: ubuntu-latest
@@ -14,11 +15,10 @@ jobs:
           from pathlib import Path
           p = Path('server/server.py')
           s = p.read_text(encoding='utf-8')
-          old = '''def send_email(to: str, subject: str, text: str) -> None:\n    """Best-effort send. Tries Resend first (the hosted path), then\n    Gmail (the dev path), then logs to stderr. Returns nothing — the\n    caller should not treat email failure as fatal."""\n    if _send_via_resend(to, subject, text):\n        print(f"[email] sent (resend) \\"{subject}\\" to {to}", file=sys.stderr)\n        return\n    if _send_via_gmail(to, subject, text):\n        print(f"[email] sent (gmail) \\"{subject}\\" to {to}", file=sys.stderr)\n        return\n    print(f"[email] SKIPPED (no RESEND_API_KEY and no Gmail configured). Would have sent to {to}: \\"{subject}\\"\\n--- BODY ---\\n{text}\\n--- END ---", file=sys.stderr)\n'''
+          start = s.index('def send_email(to: str, subject: str, text: str) -> None:')
+          end = s.index('\n# ---------- HTTP server ----------', start)
           new = '''def send_email(to: str, subject: str, text: str) -> bool:\n    """Send an email and report whether a configured provider accepted it."""\n    if _send_via_resend(to, subject, text):\n        print(f"[email] sent (resend) \\"{subject}\\" to {to}", file=sys.stderr)\n        return True\n    if _send_via_gmail(to, subject, text):\n        print(f"[email] sent (gmail) \\"{subject}\\" to {to}", file=sys.stderr)\n        return True\n    print(f"[email] FAILED (no working email provider). Subject: \\"{subject}\\" recipient: {to}", file=sys.stderr)\n    return False\n'''
-          if old not in s:
-              raise SystemExit('send_email block not found')
-          s = s.replace(old, new, 1)
+          s = s[:start] + new + s[end:]
           old2 = '''        send_email(\n            to=gmail,\n            subject="Your 1% Healthy Habit verification code",\n            text=(\n                f"Hi {username},\\n\\n"\n                f"Your 5-digit verification code is:\\n\\n"\n                f"    {code}\\n\\n"\n                f"Enter this code in the open window to finish creating your account. "\n                f"The code expires in 15 minutes.\\n\\n"\n                f"— {MAIL_FROM_NAME}"\n            ),\n        )\n        return _send(self, 200, {"ok": True})\n'''
           new2 = '''        sent = send_email(\n            to=gmail,\n            subject="Your 1% Healthy Habit verification code",\n            text=(\n                f"Hi {username},\\n\\n"\n                f"Your 5-digit verification code is:\\n\\n"\n                f"    {code}\\n\\n"\n                f"Enter this code in the open window to finish creating your account. "\n                f"The code expires in 15 minutes.\\n\\n"\n                f"— {MAIL_FROM_NAME}"\n            ),\n        )\n        if not sent:\n            return _send(self, 503, {"error": "We could not send the verification email right now. Please try again in a moment."})\n        return _send(self, 200, {"ok": True})\n'''
           if old2 not in s:
