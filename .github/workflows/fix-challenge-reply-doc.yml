@@ -19,11 +19,13 @@ jobs:
           from pathlib import Path
           path = Path("Teacher's/index.html")
           text = path.read_text(encoding="utf-8")
-          old = "Every reply has BOTH a text part and a media part, so a student can write a note with their image, or just send a recording with no text — fill one, fill both, or fill neither (the form requires at least one)."
+          old = "Every reply has BOTH"
           new = "Each reply can include text, media, or both. Students must provide at least one of the two."
-          if old not in text:
-              raise SystemExit("Target text not found")
-          path.write_text(text.replace(old, new, 1), encoding="utf-8")
+          if text.count(old) != 1:
+              raise SystemExit(f"Expected 1 documentation match, found {text.count(old)}")
+          start = text.index(old)
+          end = text.index(".", start) + 1
+          path.write_text(text[:start] + new + text[end:], encoding="utf-8")
           PY
       - name: Commit change
         run: |
