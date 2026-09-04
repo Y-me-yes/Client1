@@ -1,9 +1,6 @@
 name: Fix teacher page JS
 
-on:
-  push:
-    paths:
-      - '.github/workflows/fix-teacher-js.yml'
+on: push
 
 permissions:
   contents: write
