@@ -19,8 +19,8 @@ jobs:
           from pathlib import Path
           p = Path("Teacher's/index.html")
           s = p.read_text(encoding="utf-8")
-          old = "Click — Copy in the top bar grabs a leaderboard-formatted list."
-          new = "Click <strong>Copy</strong> in the top bar to copy the student list to your clipboard in leaderboard format."
+          old = "<p class=\"docs-shortcut-desc\"><strong>Copy</strong> in the top bar grabs a leaderboard-formatted list.</p>"
+          new = "<p class=\"docs-shortcut-desc\">Click <strong>Copy</strong> in the top bar to copy the student list to your clipboard in leaderboard format.</p>"
           if old not in s:
               raise SystemExit("Target documentation sentence not found")
           s = s.replace(old, new, 1)
