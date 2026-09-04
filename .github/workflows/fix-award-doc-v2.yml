@@ -1,0 +1,34 @@
+name: Fix award points documentation v2
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  update:
+    if: github.event.head_commit.author.name != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Replace outdated award documentation
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+          p = Path("Teacher's/index.html")
+          s = p.read_text(encoding="utf-8")
+          pattern = r'<p class="docs-step-title">Award points with the <strong>\+</strong> button\.</p>\s*<p class="docs-step-body">Pick a quick award of \+10, \+7, \+15, or \+20.*?</p>'
+          replacement = '<p class="docs-step-title"><strong>Award points from the Gradebook.</strong></p>\n                <p class="docs-step-body">Select a student\'s award action to open the Award Score dialog, then choose +10, +7, +15, +20, or enter a custom positive amount.</p>'
+          s2, n = re.subn(pattern, replacement, s, count=1, flags=re.DOTALL)
+          if n != 1:
+              raise SystemExit(f"Expected 1 documentation match, found {n}; no changes made.")
+          p.write_text(s2, encoding="utf-8")
+          PY
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "Teacher's/index.html"
+          git commit -m "Correct award points documentation"
+          git push
