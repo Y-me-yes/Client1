@@ -1,0 +1,31 @@
+name: Fix Member Status documentation
+on:
+  push:
+    branches: [main]
+permissions:
+  contents: write
+jobs:
+  fix:
+    if: github.event.head_commit.author.name != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Shorten Member Status wording
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path("Teacher's/index.html")
+          text = path.read_text(encoding="utf-8")
+          old = "Every student gets a live status based on their activity. Tap the <strong>Member Status</strong> card in the dashboard to see them sorted."
+          new = "Every student has a status based on their activity. Click <strong>Member Status</strong> to sort them by status."
+          if text.count(old) != 1:
+              raise SystemExit(f"Expected 1 documentation match, found {text.count(old)}")
+          path.write_text(text.replace(old, new, 1), encoding="utf-8")
+          PY
+      - name: Commit change
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "Teacher's/index.html"
+          git commit -m "Shorten Member Status documentation"
+          git push
