@@ -16,6 +16,20 @@
   const API_BASE     = ''; // same-origin: static files and API are served from the same host
   const AVATAR_PALETTE = ['#8B5CF6', '#10B981', '#F43F5E', '#F59E0B', '#3B82F6', '#EC4899', '#14B8A6', '#6366F1'];
 
+  // One-time migration from the old internal storage keys so existing teacher data is preserved.
+  try {
+    if (!localStorage.getItem(STORAGE_KEY)) {
+      const legacyStudents = localStorage.getItem(LEGACY_STORAGE_KEY);
+      if (legacyStudents) localStorage.setItem(STORAGE_KEY, legacyStudents);
+    }
+  } catch (err) { /* ignore storage migration errors */ }
+  try {
+    if (!sessionStorage.getItem(WELCOME_KEY)) {
+      const legacyWelcome = sessionStorage.getItem(LEGACY_WELCOME_KEY);
+      if (legacyWelcome) sessionStorage.setItem(WELCOME_KEY, legacyWelcome);
+    }
+  } catch (err) { /* ignore session migration errors */ }
+
   // ---------------- State ----------------
   const initial = {
     students: [],         // { id, studentName, score, awardCount, lastAwardedAt, history, createdAt, updatedAt }
