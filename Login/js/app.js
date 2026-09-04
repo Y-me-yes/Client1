@@ -382,14 +382,14 @@
         // Gmail signup or a regular signin. No "sign in again" step.
         showSnack(`Welcome to the circle, ${username}!`, 'success');
         // Plain student signup always uses the canonical Students page.
-        data.redirect = '../Students/index.html';
+        data.redirect = '../Student/index.html';
         let target;
         if (data.redirect) {
           const u = new URL(data.redirect, window.location.href);
           if (data.username) u.searchParams.set('u', data.username);
           target = u.toString();
         } else {
-          const u = new URL('../Students/index.html', window.location.href);
+          const u = new URL('../Student/index.html', window.location.href);
           if (data.username) u.searchParams.set('u', data.username);
           target = u.toString();
         }
@@ -401,7 +401,7 @@
         const role = data.role || 'student';
         // Never allow a stale server landing setting to redirect students
         // to an old page. Teachers keep their dedicated landing page.
-        if (role !== 'teacher') data.redirect = '../Students/index.html';
+        if (role !== 'teacher') data.redirect = '../Student/index.html';
         if (role === 'teacher') {
           // Cache the teacher password in sessionStorage so the Teacher's
           // page (loaded into the SAME tab a moment later) can mirror
@@ -432,7 +432,7 @@
         } else {
           // Fallback (server did not include a redirect). Same page the
           // server would have sent us to, with the username stitched in.
-          const u = new URL('../Students/index.html', window.location.href);
+          const u = new URL('../Student/index.html', window.location.href);
           if (data.username) u.searchParams.set('u', data.username);
           target = u.toString();
         }
