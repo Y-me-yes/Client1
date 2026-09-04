@@ -7,6 +7,7 @@ permissions:
   contents: write
 jobs:
   fix:
+    if: github.event.head_commit.author.name != 'github-actions[bot]'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/github-script@v7
@@ -19,19 +20,14 @@ jobs:
               return { sha: r.data.sha, text: Buffer.from(r.data.content, 'base64').toString('utf8') };
             }
             async function writeFile(path, sha, text, message) {
-              await github.rest.repos.createOrUpdateFileContents({
-                owner, repo, path, branch: 'main', sha, message,
-                content: Buffer.from(text, 'utf8').toString('base64')
-              });
+              await github.rest.repos.createOrUpdateFileContents({ owner, repo, path, branch: 'main', sha, message, content: Buffer.from(text, 'utf8').toString('base64') });
             }
-
             const appPath = "Teacher's/js/app.js";
             const serverPath = 'server/server.py';
             const appFile = await readFile(appPath);
             const serverFile = await readFile(serverPath);
             let a = appFile.text;
             let s = serverFile.text;
-
             const oldBadge = `const list = (state.replies.byStudent && state.replies.byStudent[s.studentName]) || [];
         if (!list.length) return '';
         const seenAt = (state.repliesSeenAt && state.repliesSeenAt[s.studentName]) || 0;
@@ -41,7 +37,6 @@ jobs:
         if (!unseen) return '';`;
             if (!a.includes(oldBadge)) core.setFailed('Badge block not found');
             a = a.replace(oldBadge, newBadge);
-
             const oldOpen = `    openRepliesDialog(username) {
       const u = String(username || '').trim();
       if (!u) return;
@@ -60,7 +55,7 @@ jobs:
       }
     },
     closeRepliesDialog() {
-      // The "seen" timestamp was already recorded when the dialog
+      // The \"seen\" timestamp was already recorded when the dialog
       // opened, so closing the dialog doesn't need to do anything
       // extra. Just flip the visibility.
       update(s => { s.repliesDialog = { open: false, student: null, items: [], view: 'today' }; });
@@ -108,7 +103,6 @@ jobs:
     },`;
             if (!a.includes(oldOpen)) core.setFailed('Open/close reply block not found');
             a = a.replace(oldOpen, newOpen);
-
             const oldRender = `const items = view === 'today'
         ? allItems.filter(r => (Number(r.createdAt) || 0) >= todayStart)
         : allItems;`;
@@ -117,7 +111,6 @@ jobs:
         : allItems.filter(r => !!r.archived);`;
             if (!a.includes(oldRender)) core.setFailed('Reply archive render block not found');
             a = a.replace(oldRender, newRender);
-
             const serverMarker = `    def _serve_media(self, filename: str):\n`;
             const serverMethod = `    def _post_replies_archive(self):
         \"\"\"POST /api/replies/archive { teacherPassword, ids }.\"\"\"
@@ -151,12 +144,10 @@ jobs:
 `;
             if (!s.includes(serverMarker)) core.setFailed('Server insertion marker not found');
             s = s.replace(serverMarker, serverMethod + serverMarker);
-
             const routeMarker = `        if path == \"/api/replies\":\n            return self._post_replies()\n`;
             const routeNew = `        if path == \"/api/replies/archive\":\n            return self._post_replies_archive()\n        if path == \"/api/replies\":\n            return self._post_replies()\n`;
             if (!s.includes(routeMarker)) core.setFailed('POST replies route not found');
             s = s.replace(routeMarker, routeNew);
-
             await writeFile(appPath, appFile.sha, a, 'Persist reply archive lifecycle (student UI)');
             await writeFile(serverPath, serverFile.sha, s, 'Persist reply archive lifecycle (server)');
             core.info('Reply archive lifecycle applied.');
