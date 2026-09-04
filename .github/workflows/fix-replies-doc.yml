@@ -1,0 +1,32 @@
+name: Fix replies documentation
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    if: github.event.head_commit.author.name != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Update replies documentation
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path("Teacher's/index.html")
+          s = p.read_text(encoding="utf-8")
+          old = 'In the <strong>Gradebook</strong> section, every student row has a <strong>Replies</strong> button in the Actions column (a speech-bubble icon). Tap it to open a popup showing every reply that student has made to a challenge or message, newest first. Each reply is labeled with which message or challenge it was for, and shows both the text and the media (image, video, or audio) inline.'
+          new = 'Every student row in the <strong>Gradebook</strong> has a <strong>Replies</strong> button. Click it to view the student\'s replies, with the newest replies shown first.'
+          if s.count(old) != 1:
+              raise SystemExit(f"Expected 1 documentation match, found {s.count(old)}")
+          p.write_text(s.replace(old, new, 1), encoding="utf-8")
+          PY
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "Teacher's/index.html"
+          git commit -m "Clarify replies documentation"
+          git push
