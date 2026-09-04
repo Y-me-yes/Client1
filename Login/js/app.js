@@ -387,7 +387,7 @@
           if (data.username) u.searchParams.set('u', data.username);
           target = u.toString();
         } else {
-          const u = new URL('../Student/index.html', window.location.href);
+          const u = new URL('../Students/index.html', window.location.href);
           if (data.username) u.searchParams.set('u', data.username);
           target = u.toString();
         }
