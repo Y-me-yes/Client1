@@ -1,0 +1,31 @@
+name: Fix Message documentation
+on:
+  push:
+    branches: [main]
+permissions:
+  contents: write
+jobs:
+  fix:
+    if: github.event.head_commit.author.name != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Update Message description
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path("Teacher's/index.html")
+          text = path.read_text(encoding="utf-8")
+          old = "Like a notification, but students can reply with text and an audio recording. Stays active until you archive it."
+          new = "A message that students can reply to. It stays active until you archive it."
+          if text.count(old) != 1:
+              raise SystemExit(f"Expected 1 documentation match, found {text.count(old)}")
+          path.write_text(text.replace(old, new, 1), encoding="utf-8")
+          PY
+      - name: Commit change
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "Teacher's/index.html"
+          git commit -m "Shorten Message documentation"
+          git push
