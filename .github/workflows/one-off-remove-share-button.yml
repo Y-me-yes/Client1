@@ -1,0 +1,40 @@
+name: One-off remove teacher share button
+
+on:
+  push:
+    paths:
+      - '.github/workflows/one-off-remove-share-button.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Remove Share button
+        shell: python
+        run: |
+          from pathlib import Path
+          import re
+
+          path = Path("Teacher's/index.html")
+          text = path.read_text(encoding="utf-8-sig")
+          pattern = r'\n\s*<button id="copyLoginLinkBtn"\b[\s\S]*?</button>\n'
+          text2, count = re.subn(pattern, '\n', text, count=1)
+          if count != 1:
+              raise SystemExit("Teacher Share button was not found; no change made.")
+          path.write_text(text2, encoding="utf-8")
+
+      - name: Remove this temporary workflow and commit
+        shell: bash
+        run: |
+          rm -f .github/workflows/one-off-remove-share-button.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Remove Share button from teacher dashboard"
+          git push
