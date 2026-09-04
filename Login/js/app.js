@@ -427,7 +427,7 @@
         } else {
           // Fallback (server did not include a redirect). Same page the
           // server would have sent us to, with the username stitched in.
-          const u = new URL('../Student/index.html', window.location.href);
+          const u = new URL('../Students/index.html', window.location.href);
           if (data.username) u.searchParams.set('u', data.username);
           target = u.toString();
         }
