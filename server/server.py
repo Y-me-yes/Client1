@@ -557,17 +557,16 @@ def _send_via_gmail(to: str, subject: str, text: str) -> bool:
         print(f"[email:gmail] send failed: {e}", file=sys.stderr)
         return False
 
-def send_email(to: str, subject: str, text: str) -> None:
-    """Best-effort send. Tries Resend first (the hosted path), then
-    Gmail (the dev path), then logs to stderr. Returns nothing — the
-    caller should not treat email failure as fatal."""
+def send_email(to: str, subject: str, text: str) -> bool:
+    """Send an email and report whether a configured provider accepted it."""
     if _send_via_resend(to, subject, text):
         print(f"[email] sent (resend) \"{subject}\" to {to}", file=sys.stderr)
-        return
+        return True
     if _send_via_gmail(to, subject, text):
         print(f"[email] sent (gmail) \"{subject}\" to {to}", file=sys.stderr)
-        return
-    print(f"[email] SKIPPED (no RESEND_API_KEY and no Gmail configured). Would have sent to {to}: \"{subject}\"\n--- BODY ---\n{text}\n--- END ---", file=sys.stderr)
+        return True
+    print(f"[email] FAILED (no working email provider). Subject: \"{subject}\" recipient: {to}", file=sys.stderr)
+    return False
 
 # ---------- HTTP server ----------
 
@@ -856,7 +855,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             save_pendings(pendings)
 
         code = issue_code(username, "signup")
-        send_email(
+        sent = send_email(
             to=gmail,
             subject="Your 1% Healthy Habit verification code",
             text=(
@@ -868,6 +867,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 f"— {MAIL_FROM_NAME}"
             ),
         )
+        if not sent:
+            return _send(self, 503, {"error": "We could not send the verification email right now. Please try again in a moment."})
         return _send(self, 200, {"ok": True})
 
     def _signin(self):
