@@ -303,11 +303,18 @@
         });
         return;
       }
-      actions.deleteStudentRemote(stu.studentName, pwd).then(ok => {
-        if (!ok) {
+      actions.deleteStudentRemote(stu.studentName, pwd).then(result => {
+        if (!result.ok) {
+          const msg = result.error || (result.status === 401
+            ? 'Wrong teacher password.'
+            : result.status === 404
+              ? 'That student account no longer exists.'
+              : result.status === 0
+                ? "Couldn't reach the server."
+                : `Delete failed (HTTP ${result.status}).`);
           update(s => {
             s.deleteDialog = { open: false, studentId: null };
-            s.snackbar = { id: Date.now(), message: 'Delete failed — wrong password or server unreachable' };
+            s.snackbar = { id: Date.now(), message: msg };
           });
           return;
         }
@@ -812,9 +819,7 @@
         });
     },
 
-    // Hard-delete a server account. Returns true on 200, false on any failure
-    // (network, wrong password, missing user, rate-limited, etc.). The local
-    // gradebook row is only removed by the caller after this resolves true.
+    // Hard-delete a server account and preserve the real server error.
     deleteStudentRemote(username, teacherPassword) {
       return fetch(API_BASE + '/api/delete-student', {
         method: 'POST',
@@ -822,10 +827,14 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username, teacherPassword }),
       })
-        .then(res => res.ok)
+        .then(async res => {
+          let data = null;
+          try { data = await res.json(); } catch (err) {}
+          return { ok: res.ok, status: res.status, error: data && data.error ? data.error : '' };
+        })
         .catch(err => {
           console.warn('deleteStudentRemote failed:', err);
-          return false;
+          return { ok: false, status: 0, error: "Couldn't reach the server." };
         });
     },
 

@@ -989,21 +989,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if not username or not password:
             return _send(self, 400, {"error": "Username and teacher password are required."})
 
-        # Throttle the (single) teacher account, same as _teacher_signin.
-        now_ms = _rl_now()
-        ip_key = "ip:" + _client_ip(self)
-        for key in (f"teacher:{TEACHER_USERNAME.lower()}", ip_key):
-            locked, retry = _rl_consume(
-                _login_buckets, key, now_ms,
-                _LOGIN_MAX_FAILS, _LOGIN_WINDOW_MS, _LOGIN_LOCKOUT_MS,
-            )
-            if locked:
-                return _send(self, 429, _rl_locked_response(retry))
-
-        # Constant-time compare on the teacher password.
-        pass_ok = hmac.compare_digest(password.encode("utf-8"), TEACHER_PASSWORD.encode("utf-8"))
-        if not pass_ok:
-            return _send(self, 401, {"error": "Wrong username or PIN."})
+        # Use the same centralized teacher check as every other teacher-only
+        # write endpoint.
+        teacher_error = self._require_teacher(password)
+        if teacher_error:
+            status, payload = teacher_error
+            return _send(self, status, payload)
 
         with _lock:
             users = load_users()
@@ -1017,7 +1008,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
             users = [u for u in users if u["username"].lower() != username.lower()]
             save_users(users)
 
-        _rl_success(_login_buckets, f"teacher:{TEACHER_USERNAME.lower()}")
+            # Confirm the account is actually gone before returning success.
+            remaining = load_users()
+            if any(u.get("username", "").lower() == username.lower() for u in remaining):
+                return _send(self, 500, {"error": "The account could not be removed from storage. Please try again."})
+
         return _send(self, 200, {"ok": True, "username": target["username"]})
 
     # ---------- shared-secret teacher check (for write paths) ----------
