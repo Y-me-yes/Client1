@@ -1,0 +1,34 @@
+name: Fix challenge reply documentation
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    if: github.event.head_commit.author.name != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Replace contradictory reply wording
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path("Teacher's/index.html")
+          text = path.read_text(encoding="utf-8")
+          old = "Every reply has BOTH a text part and a media part, so a student can write a note with their image, or just send a recording with no text — fill one, fill both, or fill neither (the form requires at least one)."
+          new = "Each reply can include text, media, or both. Students must provide at least one of the two."
+          if old not in text:
+              raise SystemExit("Target text not found")
+          path.write_text(text.replace(old, new, 1), encoding="utf-8")
+          PY
+      - name: Commit change
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "Teacher's/index.html"
+          git commit -m "Fix challenge reply documentation wording"
+          git push
