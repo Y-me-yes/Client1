@@ -1,0 +1,84 @@
+name: Fix student redirect canonical
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    if: github.event.head_commit.message != 'Fix student redirect canonical'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Make student landing canonical
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('Login/js/app.js')
+          text = p.read_text(encoding='utf-8-sig')
+
+          old1 = '''        let target;
+        if (data.redirect) {
+          const u = new URL(data.redirect, window.location.href);
+          if (data.username) u.searchParams.set('u', data.username);
+          target = u.toString();
+        } else {
+          const u = new URL('../Students/index.html', window.location.href);
+          if (data.username) u.searchParams.set('u', data.username);
+          target = u.toString();
+        }'''
+          new1 = '''        // Plain student signup always lands on the canonical Students page.
+        // Do not trust an old/stale server redirect value here.
+        const u = new URL('../Students/index.html', window.location.href);
+        if (data.username) u.searchParams.set('u', data.username);
+        const target = u.toString();'''
+
+          old2 = '''        let target;
+        if (data.redirect) {
+          // Server-provided path is relative to the Login page. Resolving
+          // against window.location.href gives the correct absolute URL
+          // for whichever port the static server runs on. We also append
+          // ?u=<username> when the server returned one, so the Student
+          // Forum can greet the right person.
+          const u = new URL(data.redirect, window.location.href);
+          if (data.username) u.searchParams.set('u', data.username);
+          target = u.toString();
+        } else if (role === 'teacher') {
+          target = new URL("../Teacher's/index.html", window.location.href).toString();
+        } else {
+          // Fallback (server did not include a redirect). Same page the
+          // server would have sent us to, with the username stitched in.
+          const u = new URL('../Student/index.html', window.location.href);
+          if (data.username) u.searchParams.set('u', data.username);
+          target = u.toString();
+        }'''
+          new2 = '''        let target;
+        if (role === 'teacher') {
+          target = new URL("../Teacher's/index.html", window.location.href).toString();
+        } else {
+          // Student accounts always use the canonical Students page.
+          // This intentionally ignores data.redirect so a stale Render
+          // USER_LANDING value cannot send students to an old page.
+          const u = new URL('../Students/index.html', window.location.href);
+          if (data.username) u.searchParams.set('u', data.username);
+          target = u.toString();
+        }'''
+
+          if old1 not in text:
+              raise SystemExit('First student redirect block not found')
+          if old2 not in text:
+              raise SystemExit('Second student redirect block not found')
+          text = text.replace(old1, new1, 1)
+          text = text.replace(old2, new2, 1)
+          p.write_text(text, encoding='utf-8')
+          PY
+      - name: Commit fix
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "Login/js/app.js"
+          git commit -m "Fix student redirect canonical"
+          git push
