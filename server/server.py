@@ -726,6 +726,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         elif self.path == "/api/content":           return self._post_content()
         elif self.path == "/api/signout":           return self._post_signout()
         elif self.path == "/api/replies":           return self._post_replies()
+        elif self.path == "/api/replies/archive":   return self._post_reply_archive()
         # /api/content/<id>/archive
         cid = _match_content_archive(self.path)
         if cid is not None:
