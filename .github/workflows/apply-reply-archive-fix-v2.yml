@@ -1,0 +1,162 @@
+name: Apply reply archive fix v2
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@v7
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            async function readFile(path) {
+              const r = await github.rest.repos.getContent({owner, repo, path, ref: 'main'});
+              return { sha: r.data.sha, text: Buffer.from(r.data.content, 'base64').toString('utf8') };
+            }
+            async function writeFile(path, sha, text, message) {
+              await github.rest.repos.createOrUpdateFileContents({
+                owner, repo, path, branch: 'main', sha, message,
+                content: Buffer.from(text, 'utf8').toString('base64')
+              });
+            }
+
+            const appPath = "Teacher's/js/app.js";
+            const serverPath = 'server/server.py';
+            const appFile = await readFile(appPath);
+            const serverFile = await readFile(serverPath);
+            let a = appFile.text;
+            let s = serverFile.text;
+
+            const oldBadge = `const list = (state.replies.byStudent && state.replies.byStudent[s.studentName]) || [];
+        if (!list.length) return '';
+        const seenAt = (state.repliesSeenAt && state.repliesSeenAt[s.studentName]) || 0;
+        const unseen = list.filter(r => (Number(r.createdAt) || 0) > seenAt).length;`;
+            const newBadge = `const list = (state.replies.byStudent && state.replies.byStudent[s.studentName]) || [];
+        const unseen = list.filter(r => !r.archived).length;
+        if (!unseen) return '';`;
+            if (!a.includes(oldBadge)) core.setFailed('Badge block not found');
+            a = a.replace(oldBadge, newBadge);
+
+            const oldOpen = `    openRepliesDialog(username) {
+      const u = String(username || '').trim();
+      if (!u) return;
+      const nowMs = Date.now();
+      // Mark this student's replies as seen as of NOW. The badge will
+      // drop to zero immediately. Any reply that arrives after this
+      // timestamp will re-increment the badge the next time renderGradebook
+      // runs.
+      const list = (state.replies.byStudent && state.replies.byStudent[u]) || [];
+      update(s => {
+        s.repliesSeenAt = { ...(s.repliesSeenAt || {}), [u]: nowMs };
+        s.repliesDialog = { open: true, student: u, items: list, view: 'today' };
+      });
+      if (!state.replies.byStudent || Object.keys(state.replies.byStudent).length === 0) {
+        return actions.loadReplies();
+      }
+    },
+    closeRepliesDialog() {
+      // The "seen" timestamp was already recorded when the dialog
+      // opened, so closing the dialog doesn't need to do anything
+      // extra. Just flip the visibility.
+      update(s => { s.repliesDialog = { open: false, student: null, items: [], view: 'today' }; });
+    },`;
+            const newOpen = `    openRepliesDialog(username) {
+      const u = String(username || '').trim();
+      if (!u) return;
+      const list = (state.replies.byStudent && state.replies.byStudent[u]) || [];
+      update(s => {
+        s.repliesDialog = { open: true, student: u, items: list, view: 'today' };
+      });
+      if (!state.replies.byStudent || Object.keys(state.replies.byStudent).length === 0) {
+        return actions.loadReplies();
+      }
+    },
+    closeRepliesDialog() {
+      const dlg = state.repliesDialog || {};
+      const u = String(dlg.student || '').trim();
+      const ids = dlg.view === 'archive'
+        ? []
+        : (dlg.items || []).filter(r => r && !r.archived && r.id).map(r => String(r.id));
+      update(s => {
+        if (u && ids.length) {
+          const grouped = { ...(s.replies.byStudent || {}) };
+          const current = Array.isArray(grouped[u]) ? grouped[u] : [];
+          grouped[u] = current.map(r => ids.includes(String(r.id))
+            ? { ...r, archived: true, archivedAt: Date.now() }
+            : r);
+          s.replies.byStudent = grouped;
+        }
+        s.repliesDialog = { open: false, student: null, items: [], view: 'today' };
+      });
+      if (!u || !ids.length) return;
+      getTeacherPassword().then(teacherPassword => {
+        if (!teacherPassword) return;
+        fetch(API_BASE + '/api/replies/archive', {
+          method: 'POST',
+          cache: 'no-store',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ teacherPassword, ids }),
+        }).then(res => {
+          if (!res.ok) console.warn('reply archive failed: HTTP ' + res.status);
+        }).catch(err => console.warn('reply archive failed:', err));
+      });
+    },`;
+            if (!a.includes(oldOpen)) core.setFailed('Open/close reply block not found');
+            a = a.replace(oldOpen, newOpen);
+
+            const oldRender = `const items = view === 'today'
+        ? allItems.filter(r => (Number(r.createdAt) || 0) >= todayStart)
+        : allItems;`;
+            const newRender = `const items = view === 'today'
+        ? allItems.filter(r => !r.archived && (Number(r.createdAt) || 0) >= todayStart)
+        : allItems.filter(r => !!r.archived);`;
+            if (!a.includes(oldRender)) core.setFailed('Reply archive render block not found');
+            a = a.replace(oldRender, newRender);
+
+            const serverMarker = `    def _serve_media(self, filename: str):\n`;
+            const serverMethod = `    def _post_replies_archive(self):
+        \"\"\"POST /api/replies/archive { teacherPassword, ids }.\"\"\"
+        try:
+            body = _read_json(self)
+        except Exception:
+            return _send(self, 400, {\"error\": \"Invalid request body.\"})
+        err = self._require_teacher(body.get(\"teacherPassword\"))
+        if err is not None:
+            return _send(self, err[0], err[1])
+        ids = body.get(\"ids\")
+        if not isinstance(ids, list):
+            return _send(self, 400, {\"error\": \"ids must be a list.\"})
+        ids = {str(x).strip() for x in ids if str(x).strip()}
+        if not ids:
+            return _send(self, 400, {\"error\": \"No reply ids supplied.\"})
+        now_ms = _rl_now()
+        changed = 0
+        with _lock:
+            replies = load_replies()
+            if not isinstance(replies, list): replies = []
+            for row in replies:
+                if not isinstance(row, dict) or str(row.get(\"id\") or \"\") not in ids: continue
+                if row.get(\"archived\"): continue
+                row[\"archived\"] = True
+                row[\"archivedAt\"] = now_ms
+                changed += 1
+            save_replies(replies)
+        return _send(self, 200, {\"ok\": True, \"archived\": changed})
+
+`;
+            if (!s.includes(serverMarker)) core.setFailed('Server insertion marker not found');
+            s = s.replace(serverMarker, serverMethod + serverMarker);
+
+            const routeMarker = `        if path == \"/api/replies\":\n            return self._post_replies()\n`;
+            const routeNew = `        if path == \"/api/replies/archive\":\n            return self._post_replies_archive()\n        if path == \"/api/replies\":\n            return self._post_replies()\n`;
+            if (!s.includes(routeMarker)) core.setFailed('POST replies route not found');
+            s = s.replace(routeMarker, routeNew);
+
+            await writeFile(appPath, appFile.sha, a, 'Persist reply archive lifecycle (student UI)');
+            await writeFile(serverPath, serverFile.sha, s, 'Persist reply archive lifecycle (server)');
+            core.info('Reply archive lifecycle applied.');
