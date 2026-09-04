@@ -1,0 +1,29 @@
+name: Fix student redirect
+on:
+  push:
+    branches: [main]
+permissions:
+  contents: write
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fix remaining student path
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('Login/js/app.js')
+          s = p.read_text(encoding='utf-8-sig')
+          old = "new URL('../Student/index.html', window.location.href)"
+          if old not in s:
+              raise SystemExit('No old student path found')
+          p.write_text(s.replace(old, "new URL('../Students/index.html', window.location.href)"), encoding='utf-8')
+          PY
+      - name: Commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Login/js/app.js
+          git commit -m "Fix remaining student redirect"
+          git push
