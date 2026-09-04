@@ -1,6 +1,9 @@
 name: Fix reply archive lifecycle
 
 on:
+  push:
+    paths:
+      - '.github/workflows/fix-reply-archive-lifecycle.yml'
   workflow_dispatch:
 
 permissions:
@@ -17,7 +20,6 @@ jobs:
         shell: python
         run: |
           from pathlib import Path
-          import re
           import subprocess
 
           app = Path("Teacher's/js/app.js")
@@ -25,8 +27,6 @@ jobs:
           a = app.read_text(encoding="utf-8")
           s = server.read_text(encoding="utf-8")
 
-          # 1) Make the teacher's reply badge count persistent, server-backed
-          #    archived state instead of localStorage seen timestamps.
           old_badge = '''const list = (state.replies.byStudent && state.replies.byStudent[s.studentName]) || [];
         if (!list.length) return '';
         const seenAt = (state.repliesSeenAt && state.repliesSeenAt[s.studentName]) || 0;
@@ -34,11 +34,9 @@ jobs:
           new_badge = '''const list = (state.replies.byStudent && state.replies.byStudent[s.studentName]) || [];
         const unseen = list.filter(r => !r.archived).length;
         if (!unseen) return '';'''
-          if old_badge not in a:
-              raise SystemExit("Badge block not found")
+          if old_badge not in a: raise SystemExit("Badge block not found")
           a = a.replace(old_badge, new_badge, 1)
 
-          # 2) Opening the Replies popup must not archive anything.
           old_open = '''    openRepliesDialog(username) {
       const u = String(username || '').trim();
       if (!u) return;
@@ -80,8 +78,6 @@ jobs:
         ? []
         : (dlg.items || []).filter(r => r && !r.archived && r.id).map(r => String(r.id));
 
-      // Close the popup immediately and remove the replies from the new-reply
-      // badge. The server write below makes the archive state survive reloads.
       update(s => {
         if (u && ids.length) {
           const grouped = { ...(s.replies.byStudent || {}) };
@@ -107,32 +103,23 @@ jobs:
         }).catch(err => console.warn('reply archive failed:', err));
       });
     },'''
-          if old_open not in a:
-              raise SystemExit("Reply open/close block not found")
+          if old_open not in a: raise SystemExit("Reply open/close block not found")
           a = a.replace(old_open, new_open, 1)
 
-          # 3) Archive view should show only replies that were actually archived.
           old_archive = '''const items = view === 'today'
         ? allItems.filter(r => (Number(r.createdAt) || 0) >= todayStart)
         : allItems;'''
           new_archive = '''const items = view === 'today'
         ? allItems.filter(r => !r.archived && (Number(r.createdAt) || 0) >= todayStart)
         : allItems.filter(r => !!r.archived);'''
-          if old_archive not in a:
-              raise SystemExit("Reply archive render filter not found")
+          if old_archive not in a: raise SystemExit("Reply archive render filter not found")
           a = a.replace(old_archive, new_archive, 1)
 
-          # 4) Persisted repliesSeenAt is no longer used for badge state. Keep
-          #    the field for backward compatibility with existing localStorage.
-
-          # 5) Add a teacher-only server endpoint that permanently archives
-          #    selected replies by id.
           marker = '''    def _serve_media(self, filename: str):
 '''
           method = '''    def _post_replies_archive(self):
         """POST /api/replies/archive { teacherPassword, ids }.
-        Permanently marks selected student replies as archived so they
-        leave the new-reply badge and appear in the student's Reply Archive.
+        Permanently marks selected student replies as archived.
         """
         try:
             body = _read_json(self)
@@ -145,10 +132,10 @@ jobs:
         ids = body.get("ids")
         if not isinstance(ids, list):
             return _send(self, 400, {"error": "ids must be a list."})
-        ids = [str(x).strip() for x in ids if str(x).strip()]
+        ids = {str(x).strip() for x in ids if str(x).strip()}
         if not ids:
             return _send(self, 400, {"error": "No reply ids supplied."})
-        ids = set(ids)
+
         now_ms = _rl_now()
         changed = 0
         with _lock:
@@ -156,9 +143,7 @@ jobs:
             if not isinstance(replies, list):
                 replies = []
             for row in replies:
-                if not isinstance(row, dict):
-                    continue
-                if str(row.get("id") or "") not in ids:
+                if not isinstance(row, dict) or str(row.get("id") or "") not in ids:
                     continue
                 if row.get("archived"):
                     continue
@@ -170,11 +155,9 @@ jobs:
         return _send(self, 200, {"ok": True, "archived": changed})
 
 '''
-          if marker not in s:
-              raise SystemExit("Server insertion marker not found")
+          if marker not in s: raise SystemExit("Server insertion marker not found")
           s = s.replace(marker, method + marker, 1)
 
-          # 6) Route the archive request before the generic /api/replies route.
           route_marker = '''        if path == "/api/replies":
             return self._post_replies()
 '''
@@ -183,13 +166,11 @@ jobs:
         if path == "/api/replies":
             return self._post_replies()
 '''
-          if route_marker not in s:
-              raise SystemExit("POST replies route not found")
+          if route_marker not in s: raise SystemExit("POST replies route not found")
           s = s.replace(route_marker, route_insert, 1)
 
           app.write_text(a, encoding="utf-8")
           server.write_text(s, encoding="utf-8")
-
           subprocess.run(["git", "config", "user.name", "github-actions[bot]"], check=True)
           subprocess.run(["git", "config", "user.email", "41898282+github-actions[bot]@users.noreply.github.com"], check=True)
           subprocess.run(["git", "add", "Teacher's/js/app.js", "server/server.py"], check=True)
