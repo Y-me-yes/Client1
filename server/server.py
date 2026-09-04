@@ -644,6 +644,25 @@ class Handler(http.server.BaseHTTPRequestHandler):
     def do_GET(self):  # noqa: N802
         if self.path == "/api/health" or self.path == "/health":
             return _send(self, 200, {"ok": True, "storage": _storage_mode})
+        # Debug: reveal which env vars the server actually loaded. Gated
+        # by a query string secret so random visitors can't read them.
+        if self.path == "/api/_env":
+            from urllib.parse import urlparse, parse_qs
+            qs = parse_qs(urlparse(self.path).query)
+            if qs.get("k", [None])[0] != "client1-debug":
+                return _send(self, 404, {"error": "Not found."})
+            return _send(self, 200, {
+                "TEACHER_USERNAME_set":   bool(TEACHER_USERNAME),
+                "TEACHER_USERNAME_value": TEACHER_USERNAME,
+                "TEACHER_USERNAME_len":   len(TEACHER_USERNAME),
+                "TEACHER_PASSWORD_set":   bool(TEACHER_PASSWORD),
+                "TEACHER_PASSWORD_len":   len(TEACHER_PASSWORD),
+                "TEACHER_PASSWORD_first2": TEACHER_PASSWORD[:2] if TEACHER_PASSWORD else "",
+                "TEACHER_PASSWORD_last2":  TEACHER_PASSWORD[-2:] if TEACHER_PASSWORD else "",
+                "MONGODB_URI_set": bool((os.environ.get("MONGODB_URI") or "").strip()),
+                "MONGODB_URI_first30": (os.environ.get("MONGODB_URI") or "")[:30],
+                "RESEND_API_KEY_set": bool((os.environ.get("RESEND_API_KEY") or "").strip()),
+            })
         # Serve static files from the project root (FINISHED/) so the
         # hosted service can serve Login/, Students/, Student/, Teacher's/
         # out of the same Python process. The static dir is the parent
