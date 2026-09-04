@@ -1,0 +1,30 @@
+name: Cleanup Teacher internal branding
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Clean outdated internal branding
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path("Teacher's/js/app.js")
+          s = p.read_text(encoding="utf-8")
+          s = s.replace("Student Score Tracker — Website", "1% Healthy Habit — Teacher Dashboard")
+          s = s.replace("const STORAGE_KEY = 'sst.students.v1';", "const STORAGE_KEY = 'healthy-habit.students.v1';")
+          s = s.replace("const WELCOME_KEY  = 'sst.welcomed.v1';", "const WELCOME_KEY  = 'healthy-habit.welcomed.v1';")
+          p.write_text(s, encoding="utf-8")
+          PY
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "Teacher's/js/app.js"
+          git diff --cached --quiet && exit 0
+          git commit -m "Clean outdated Teacher dashboard branding"
+          git push
