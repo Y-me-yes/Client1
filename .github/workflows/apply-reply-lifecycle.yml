@@ -1,0 +1,68 @@
+name: Apply reply lifecycle
+on:
+  push:
+    paths:
+      - 'REPLY_LIFECYCLE_TRIGGER.txt'
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Patch files
+        shell: python
+        run: |
+          from pathlib import Path
+          import re
+
+          # Server: add archive fields to new replies.
+          p = Path('server/server.py')
+          s = p.read_text(encoding='utf-8')
+          old = '                "mediaSize": media_size,\n                "createdAt": now_ms,\n            }'
+          new = '                "mediaSize": media_size,\n                "createdAt": now_ms,\n                "archived": False,\n                "archivedAt": None,\n                "archiveReason": None,\n            }'
+          assert old in s, 'reply row not found'
+          s = s.replace(old, new, 1)
+
+          # Server: active teacher replies exclude archived replies.
+          old = '            if not isinstance(r, dict):\n                continue\n            u = str(r.get("studentUsername") or "").strip()\n'
+          new = '            if not isinstance(r, dict) or r.get("archived"):\n                continue\n            u = str(r.get("studentUsername") or "").strip()\n'
+          assert old in s, 'active reply grouping not found'
+          s = s.replace(old, new, 1)
+
+          # Server: persistent archive handlers.
+          marker = '    def _post_signout(self):\n'
+          assert marker in s, 'signout marker not found'
+          method = '''    def _post_reply_archive(self):\n        try:\n            body = _read_json(self)\n        except Exception:\n            return _send(self, 400, {"error": "Invalid request body."})\n        err = self._require_teacher(body.get("teacherPassword"))\n        if err is not None:\n            return _send(self, err[0], err[1])\n        raw_ids = body.get("ids")\n        if not isinstance(raw_ids, list):\n            return _send(self, 400, {"error": "Reply ids are required."})\n        ids = {str(x).strip() for x in raw_ids if str(x).strip()}\n        if not ids:\n            return _send(self, 200, {"ok": True, "archived": 0})\n        now_ms = _rl_now()\n        with _lock:\n            replies = load_replies()\n            if not isinstance(replies, list):\n                replies = []\n            count = 0\n            for r in replies:\n                if not isinstance(r, dict) or str(r.get("id") or "") not in ids:\n                    continue\n                if r.get("archived"):\n                    continue\n                r["archived"] = True\n                r["archivedAt"] = now_ms\n                r["archiveReason"] = "teacher-reviewed"\n                count += 1\n            save_replies(replies)\n        return _send(self, 200, {"ok": True, "archived": count})\n\n    def _get_reply_archive(self):\n        with _lock:\n            replies = load_replies()\n        if not isinstance(replies, list):\n            replies = []\n        by_student = {}\n        for r in replies:\n            if not isinstance(r, dict) or not r.get("archived"):\n                continue\n            u = str(r.get("studentUsername") or "").strip()\n            if u:\n                by_student.setdefault(u, []).append(r)\n        for u in by_student:\n            by_student[u].sort(key=lambda r: r.get("archivedAt") or r.get("createdAt") or 0, reverse=True)\n        return _send(self, 200, {"ok": True, "byStudent": by_student})\n\n'''
+          s = s.replace(marker, method + marker, 1)
+
+          # Server routes.
+          get_marker = '        if self.path == "/api/replies" or self.path.startswith("/api/replies?"):\n            return self._get_replies()\n'
+          get_new = '        if self.path == "/api/replies/archive":\n            return self._get_reply_archive()\n' + get_marker
+          assert get_marker in s, 'GET route not found'
+          s = s.replace(get_marker, get_new, 1)
+          post_marker = '        elif self.path == "/api/replies":           return self._post_replies()\n'
+          post_new = post_marker + '        elif self.path == "/api/replies/archive":   return self._post_reply_archive()\n'
+          assert post_marker in s, 'POST route not found'
+          s = s.replace(post_marker, post_new, 1)
+          p.write_text(s, encoding='utf-8')
+
+          # Teacher: replace reply action methods.
+          p = Path("Teacher's/js/app.js")
+          s = p.read_text(encoding='utf-8')
+          start = s.index('    openRepliesDialog(username) {')
+          end = s.index('    openRepliesArchiveDialog(username) {', start)
+          end2 = s.index('    },\n', end) + len('    },\n')
+          block = '''    openRepliesDialog(username) {\n      const u = String(username || '').trim();\n      if (!u) return;\n      const list = (state.replies.byStudent && state.replies.byStudent[u]) || [];\n      const openedReplyIds = list.map(r => r && r.id).filter(Boolean);\n      update(s => { s.repliesDialog = { open: true, student: u, items: list, view: 'today', openedReplyIds }; });\n      if (!state.replies.byStudent || Object.keys(state.replies.byStudent).length === 0) return actions.loadReplies();\n    },\n    closeRepliesDialog() {\n      const ids = (state.repliesDialog && state.repliesDialog.openedReplyIds) || [];\n      const student = state.repliesDialog && state.repliesDialog.student;\n      update(s => { s.repliesDialog = { open: false, student: null, items: [], view: 'today', openedReplyIds: [] }; });\n      if (!ids.length) return;\n      getTeacherPassword().then(teacherPassword => {\n        if (!teacherPassword) return;\n        fetch(API_BASE + '/api/replies/archive', {\n          method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'application/json' },\n          body: JSON.stringify({ ids, teacherPassword })\n        })\n          .then(res => res.json().catch(() => ({})).then(data => ({ res, data })))\n          .then(({ res, data }) => {\n            if (!res.ok || !data.ok) throw new Error(data.error || ('HTTP ' + res.status));\n            const idSet = new Set(ids);\n            update(s => {\n              const next = { ...(s.replies.byStudent || {}) };\n              if (student && Array.isArray(next[student])) {\n                next[student] = next[student].filter(r => !idSet.has(r && r.id));\n                if (!next[student].length) delete next[student];\n              }\n              s.replies.byStudent = next;\n            });\n          })\n          .catch(err => { console.warn('archive replies failed:', err); actions.loadReplies(); });\n      });\n    },\n    openRepliesArchiveDialog(username) {\n      const u = String(username || '').trim();\n      if (!u) return;\n      fetch(API_BASE + '/api/replies/archive', { cache: 'no-store' })\n        .then(res => { if (!res.ok) throw new Error('HTTP ' + res.status); return res.json(); })\n        .then(data => {\n          const by = (data && data.byStudent && typeof data.byStudent === 'object') ? data.byStudent : {};\n          update(s => { s.repliesDialog = { open: true, student: u, items: Array.isArray(by[u]) ? by[u] : [], view: 'archive', openedReplyIds: [] }; });\n        })\n        .catch(err => console.warn('load reply archive failed:', err));\n    },\n'''
+          s = s[:start] + block + s[end2:]
+
+          # Remove old local seen-state and persistence references.
+          s = re.sub(r"    // Per-student \"last seen\" timestamps\..*?    repliesSeenAt: \{\},\n", '', s, count=1, flags=re.S)
+          s = re.sub(r"      // `repliesSeenAt` is a map of student username.*?        \? parsed\.repliesSeenAt : \{\};\n", '', s, count=1, flags=re.S)
+          s = re.sub(r"        // Persist the \"last seen\" timestamps too.*?        repliesSeenAt: state\.repliesSeenAt \|\| \{\},\n", '', s, count=1, flags=re.S)
+
+          # Badge is active count.
+          s = re.sub(r"      const list = \(state\.replies\.byStudent && state\.replies\.byStudent\[s\.studentName\]\) \|\| \[\];\n      if \(!list\.length\) return '';\n      const seenAt = .*?      return `<span class=\"replies-badge\" aria-label=\"\$\{unseen\} new replies\">\$\{unseen > 99 \? '99\\+' : unseen\}\}</span>`;\n", "      const list = (state.replies.byStudent && state.replies.byStudent[s.studentName]) || [];\n      if (!list.length) return '';\n      const count = list.length;\n      return `<span class=\"replies-badge\" aria-label=\"${count} new replies\">${count > 99 ? '99+' : count}</span>`;\n", s, count=1, flags=re.S)
+          p.write_text(s, encoding='utf-8')
+          print('done')
