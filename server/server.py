@@ -2680,7 +2680,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
         # "/" maps to Login/index.html by convention so the deployed
         # URL `https://x.onrender.com/` lands on the login page.
         if clean in ("", "/"):
-            clean = "/Login/"
+            self.send_response(302)
+            self.send_header("Location", "/Login/")
+            self.end_headers()
+            return
         # Only serve paths that look like absolute paths into our tree.
         if not clean.startswith("/"):
             raise _NotStatic()
