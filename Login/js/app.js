@@ -381,6 +381,8 @@
         // the user straight to their Student page, same as a verified
         // Gmail signup or a regular signin. No "sign in again" step.
         showSnack(`Welcome to the circle, ${username}!`, 'success');
+        // Plain student signup always uses the canonical Students page.
+        data.redirect = '../Students/index.html';
         let target;
         if (data.redirect) {
           const u = new URL(data.redirect, window.location.href);
@@ -397,6 +399,9 @@
         // called /api/signin to take them to their page. Same redirect
         // logic either way.
         const role = data.role || 'student';
+        // Never allow a stale server landing setting to redirect students
+        // to an old page. Teachers keep their dedicated landing page.
+        if (role !== 'teacher') data.redirect = '../Students/index.html';
         if (role === 'teacher') {
           // Cache the teacher password in sessionStorage so the Teacher's
           // page (loaded into the SAME tab a moment later) can mirror
