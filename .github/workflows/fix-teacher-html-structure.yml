@@ -1,0 +1,41 @@
+name: Fix teacher active content markup
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Fix malformed active content wrapper
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path("Teacher's/index.html")
+          text = path.read_text(encoding="utf-8")
+          old = '''      <div class="content-head">\n        <span class="content-eyebrow">\n        <h2 class="content-title">Live contents for your students</h2>\n      </div>'''
+          new = '''      <div class="content-head">\n        <h2 class="content-title">Live contents for your students</h2>\n      </div>'''
+
+          if old not in text:
+              raise SystemExit("Expected markup was not found; no change made.")
+
+          path.write_text(text.replace(old, new, 1), encoding="utf-8")
+
+      - name: Commit the fix and remove this temporary workflow
+        shell: bash
+        run: |
+          rm .github/workflows/fix-teacher-html-structure.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "Teacher's/index.html" .github/workflows/fix-teacher-html-structure.yml
+          git diff --cached --quiet && { echo "No changes to commit."; exit 0; }
+          git commit -m "Fix malformed teacher content heading markup"
+          git push
