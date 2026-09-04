@@ -1,0 +1,89 @@
+name: Fix student sign-out redirect
+on:
+  push:
+    branches: [main]
+permissions:
+  contents: write
+jobs:
+  fix:
+    if: github.event.head_commit.author.name != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Update student sign-out redirect
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path("Student/js/app.js")
+          text = path.read_text(encoding="utf-8")
+          old = """    // Sign out: clear the URL ?u= and reload the page so the user
+              // lands on the \"Sign in first\" view. We used to redirect to
+              // http://localhost:8001/ (the Login page), but that 1) only works
+              // if the Login server is currently running, 2) punts the user
+              // away from the Student app to a different origin, and 3) is
+              // confusing if they want to sign in as someone else but the
+              // Login window isn't open. Reloading with no ?u= is self-
+              // contained: the page shows the \"Sign in first\" card with a
+              // link to the Login page if they want it.
+              // Sign out: clear the URL ?u= and reload the page so the user
+              // lands on the \"Sign in first\" view. We also fire-and-forget a
+              // POST /api/signout with `keepalive: true` so the server has a
+              // chance to copy every active notification the student viewed
+              // into their per-student archive before the page transitions.
+              // `keepalive` lets the request survive the unload.
+              $('#signoutBtn').addEventListener('click', () => {
+                const u = state.username;
+                if (u) {
+                  try {
+                    fetch(API_BASE + '/api/signout', {
+                      method: 'POST',
+                      cache: 'no-store',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ username: u }),
+                      keepalive: true,
+                    }).catch(() => {});
+                  } catch (err) { /* ignore */ }
+                }
+                try {
+                  const url = new URL(window.location.href);
+                  url.searchParams.delete('u');
+                  // Use replace() so the back button doesn't drop them back
+                  // into the signed-in view.
+                  window.location.replace(url.toString());
+                } catch (err) {
+                  // Fall back to a hard reload of the same page.
+                  window.location.reload();
+                }
+              });"""
+          new = """    // Sign out: archive the student's viewed content, clear the signed-in
+              // URL state, and immediately take them back to the Login page.
+              $('#signoutBtn').addEventListener('click', () => {
+                const u = state.username;
+                if (u) {
+                  try {
+                    fetch(API_BASE + '/api/signout', {
+                      method: 'POST',
+                      cache: 'no-store',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ username: u }),
+                      keepalive: true,
+                    }).catch(() => {});
+                  } catch (err) { /* ignore */ }
+                }
+                try {
+                  window.location.replace('../Login/index.html');
+                } catch (err) {
+                  window.location.href = '../Login/index.html';
+                }
+              });"""
+          if text.count(old) != 1:
+              raise SystemExit(f"Expected 1 sign-out handler match, found {text.count(old)}")
+          path.write_text(text.replace(old, new, 1), encoding="utf-8")
+          PY
+      - name: Commit change
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "Student/js/app.js"
+          git commit -m "Redirect student sign-out to Login page"
+          git push
