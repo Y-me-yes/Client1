@@ -125,7 +125,7 @@ WHATSAPP_NUMBER = env("WHATSAPP_NUMBER", "+234 814 159 4944")
 TEACHER_USERNAME    = env("TEACHER_USERNAME", "")
 TEACHER_PASSWORD    = env("TEACHER_PASSWORD", "")
 TEACHER_LANDING     = env("TEACHER_LANDING", "../Teacher's/index.html")
-USER_LANDING        = env("USER_LANDING", "../Students/index.html")
+USER_LANDING        = "../Students/index.html"
 
 DATA_DIR     = Path(__file__).parent
 # STATIC_DIR is the project root (FINISHED/), one level up from
