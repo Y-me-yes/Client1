@@ -1,0 +1,27 @@
+name: Run lifecycle follow-up
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/fix_lifecycle_followup.py'
+      - '.github/lifecycle-followup.txt'
+permissions:
+  contents: write
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - run: python scripts/fix_lifecycle_followup.py
+      - name: Validate and commit
+        shell: bash
+        run: |
+          set -e
+          python -m py_compile server/server.py
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add server/server.py scripts/fix_lifecycle_followup.py
+          git commit -m 'fix: preserve viewed state for archived messages'
+          git push origin HEAD:main
