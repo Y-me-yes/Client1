@@ -1,0 +1,67 @@
+name: Fix Teacher welcome login session
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/fix-welcome-login-session.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Update welcome behavior
+        shell: python
+        run: |
+          from pathlib import Path
+
+          teacher = Path("Teacher's/js/app.js")
+          text = teacher.read_text(encoding="utf-8")
+
+          old_init = '''    // Welcome popup: show it whenever the Teacher page is opened.
+    // Closing it still dismisses it for the current page; a new page load
+    // starts with the welcome visible again.
+    actions.openWelcome();'''
+          new_init = '''    // Show the welcome only after a successful teacher sign-in.
+    // The pending flag is consumed immediately, so refreshing this page
+    // will not show the popup again. A later sign-in creates a new flag.
+    let showWelcome = false;
+    try {
+      showWelcome = sessionStorage.getItem('healthy-habit.welcome.pending.v1') === '1';
+      if (showWelcome) sessionStorage.removeItem('healthy-habit.welcome.pending.v1');
+    } catch (err) { /* ignore storage errors */ }
+    if (showWelcome) actions.openWelcome();'''
+          if old_init not in text:
+              raise SystemExit("Teacher welcome init block not found")
+          text = text.replace(old_init, new_init, 1)
+
+          old_close = '''      // Mark the welcome as seen for this tab session only. We use sessionStorage
+      // (cleared when the tab/window closes) so that the next time the user launches
+      // Start Website.bat and a fresh tab opens, the welcome shows again.
+      try { sessionStorage.setItem(WELCOME_KEY, '1'); } catch (err) { /* ignore */ }
+      update(s => { s.welcomeDialog = false; });'''
+          new_close = '''      update(s => { s.welcomeDialog = false; });'''
+          if old_close in text:
+              text = text.replace(old_close, new_close, 1)
+          teacher.write_text(text, encoding="utf-8")
+
+          login = Path("Login/js/app.js")
+          text = login.read_text(encoding="utf-8")
+          old_login = "try { sessionStorage.setItem('teacher.pwd', pin); } catch (err) { /* ignore */ }"
+          new_login = "try { sessionStorage.setItem('teacher.pwd', pin); sessionStorage.setItem('healthy-habit.welcome.pending.v1', '1'); } catch (err) { /* ignore */ }"
+          if old_login not in text:
+              raise SystemExit("Teacher login cache line not found")
+          login.write_text(text.replace(old_login, new_login, 1), encoding="utf-8")
+      - name: Commit and remove workflow
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "Teacher's/js/app.js" "Login/js/app.js"
+          git commit -m "fix: show Teacher welcome once per sign-in [skip ci]"
+          git rm .github/workflows/fix-welcome-login-session.yml
+          git commit -m "chore: remove temporary welcome workflow [skip ci]"
+          git push
