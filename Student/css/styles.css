@@ -243,6 +243,8 @@ body {
 
 .challenge-body { display: flex; flex-direction: column; gap: 12px; }
 
+.challenge-empty[hidden] { display: none !important; }
+
 .challenge-empty {
   display: flex;
   align-items: center;
