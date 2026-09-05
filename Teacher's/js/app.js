@@ -403,7 +403,8 @@
           return res.json();
         })
         .then(data => {
-          const active  = Array.isArray(data && data.active)  ? data.active  : [];
+          const activeRaw = Array.isArray(data && data.active) ? data.active : [];
+          const active = activeRaw.filter(row => !row || !row.archived);
           const archive = Array.isArray(data && data.archive) ? data.archive : [];
           update(s => {
             s.content.active = active;
@@ -524,6 +525,11 @@
     },
 
     openDailyChallenge() {
+      const alreadyLive = Array.isArray(state.content && state.content.active) && state.content.active.some(item => item && item.kind === 'daily-challenge' && !item.archived);
+      if (alreadyLive) {
+        update(s => { s.snackbar = { id: Date.now(), message: 'Archive the current Daily Challenge before setting another one.' }; });
+        return;
+      }
       update(s => {
         s.fab.popupOpen = false;
         s.fab.dailyChallenge = { open: true, text: '', saving: false, error: null };

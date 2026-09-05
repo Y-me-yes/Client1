@@ -1498,8 +1498,6 @@ class Handler(http.server.BaseHTTPRequestHandler):
         active-list row without an extra round-trip."""
         if not isinstance(m, dict):
             return None
-        if m.get("archived"):
-            return None
         title = str(m.get("title") or "").strip()
         body  = str(m.get("body") or "").strip()
         if not title and not body:
@@ -1528,8 +1526,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
             "body":         body,
             "createdAt":    m.get("createdAt") or now_ms,
             "expiresAt":    None,
-            "viewedBy":     None,           # messages don't track views
-            "returnType":   None,           # messages always allow text+audio
+            "viewedBy":      list(m.get("viewedBy") or []),
+            "archived":      bool(m.get("archived")),
+            "returnType":    None,
             "replyCount":   reply_count,
         }
 
@@ -1592,8 +1591,38 @@ class Handler(http.server.BaseHTTPRequestHandler):
                             updated = True
                     if updated:
                         save_notifications(notifs)
-                        # Re-sweep: this view may have completed the set.
                         challenge, notifs, archive = self._sweep_archives_locked()
+
+                    messages_for_view = load_messages()
+                    if isinstance(messages_for_view, list):
+                        changed = False
+                        for m in messages_for_view:
+                            if not isinstance(m, dict):
+                                continue
+                            viewed = list(m.get("viewedBy") or [])
+                            if username not in [str(v).lower() for v in viewed]:
+                                viewed.append(username)
+                                m["viewedBy"] = viewed
+                                changed = True
+                        if changed:
+                            save_messages(messages_for_view)
+                    if isinstance(challenge, dict) and challenge.get("kind") == "new-challenge":
+                        viewed = list(challenge.get("viewedBy") or [])
+                        if username not in [str(v).lower() for v in viewed]:
+                            viewed.append(username)
+                            challenge["viewedBy"] = viewed
+                            save_challenge(challenge)
+                    archive_changed = False
+                    for a in archive:
+                        if not isinstance(a, dict) or a.get("archiveReason") != "manual" or a.get("kind") not in ("message", "new-challenge"):
+                            continue
+                        viewed = list(a.get("viewedBy") or [])
+                        if username not in [str(v).lower() for v in viewed]:
+                            viewed.append(username)
+                            a["viewedBy"] = viewed
+                            archive_changed = True
+                    if archive_changed:
+                        save_archive(archive)
 
         # Build the public response.
         done = load_challenge_done()
@@ -1620,6 +1649,27 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 r = self._enrich_message_row(m)
                 if r:
                     active.append(r)
+
+        if username and role != "teacher":
+            for a in archive:
+                if not isinstance(a, dict):
+                    continue
+                if a.get("archiveReason") != "manual" or a.get("kind") not in ("message", "new-challenge"):
+                    continue
+                active.append({
+                    "id": a.get("id"), "kind": a.get("kind"),
+                    "title": str(a.get("title") or "Message"),
+                    "body": str(a.get("body") or ""),
+                    "text": str(a.get("text") or ""),
+                    "createdAt": a.get("createdAt") or now_ms,
+                    "expiresAt": a.get("expiresAt"),
+                    "viewedBy": list(a.get("viewedBy") or []),
+                    "archived": True,
+                    "archivedAt": a.get("archivedAt"),
+                    "returnType": a.get("returnType"),
+                    "replyCount": 0,
+                    "studentVisible": True,
+                })
 
         # Sort: notifications + messages first (newest first), then the
         # challenge. (The challenge itself stays at the bottom; the
@@ -1732,6 +1782,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     if exp > now_ms + 30 * 24 * 60 * 60 * 1000:
                         return _send(self, 400, {"error": "Expiry can't be more than 30 days out."})
                 else:
+                    current = load_challenge()
+                    if isinstance(current, dict) and current:
+                        current_kind = str(current.get("kind") or "daily-challenge")
+                        current_text = str(current.get("text") or "").strip()
+                        current_exp = current.get("expiresAt")
+                        if current_text and current_kind == "daily-challenge" and (not isinstance(current_exp, int) or current_exp <= 0 or now_ms < current_exp):
+                            return _send(self, 409, {"error": "A Daily Challenge is already active. Archive it before setting another one."})
                     # Daily: expires at local midnight tomorrow.
                     t = time.localtime(now_ms / 1000)
                     tomorrow = time.mktime((t.tm_year, t.tm_mon, t.tm_mday + 1, 0, 0, 0, 0, 0, 0))
@@ -1818,6 +1875,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     "title": title,
                     "body": body_text,
                     "createdAt": now_ms,
+                    "viewedBy": [],
                     "archived": False,
                     "archivedAt": None,
                 })
@@ -1900,8 +1958,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     "expiresAt": challenge.get("expiresAt"),
                     "archivedAt": now_ms,
                     "archiveReason": "manual",
+                    "viewedBy": list(challenge.get("viewedBy") or []) if str(challenge.get("kind") or "") == "new-challenge" else [],
                     "setBy": challenge.get("setBy"),
                     "setAt": challenge.get("setAt"),
+                    "returnType": challenge.get("returnType"),
                 })
                 if len(archive) > 200:
                     archive = archive[-200:]
@@ -2411,13 +2471,52 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 n["viewedBy"] = [v for v in n.get("viewedBy") or []
                                  if str(v).lower() != username]
 
-            # Cap the per-student archive so a long-running school
-            # year doesn't bloat the file. Keep the most recent 200
-            # rows per student (good enough; cap is loose).
+            messages = load_messages()
+            if not isinstance(messages, list):
+                messages = []
+            for m in messages:
+                if not isinstance(m, dict):
+                    continue
+                viewed = [str(v).lower() for v in (m.get("viewedBy") or [])]
+                if username not in viewed:
+                    continue
+                source_id = str(m.get("id") or "")
+                if any(isinstance(r, dict) and str(r.get("studentUsername") or "").lower() == username and str(r.get("sourceId") or "") == source_id and r.get("archiveReason") == "signed-out" for r in sa):
+                    continue
+                sa.append({"id":"sa-"+secrets.token_hex(6),"sourceId":source_id,"kind":"message","title":m.get("title"),"body":m.get("body"),"createdAt":m.get("createdAt") or now_ms,"archivedAt":now_ms,"archiveReason":"signed-out","studentUsername":username})
+                moved += 1
+
+            ch = load_challenge()
+            if isinstance(ch, dict) and ch.get("kind") == "new-challenge":
+                viewed = [str(v).lower() for v in (ch.get("viewedBy") or [])]
+                if username in viewed:
+                    source_id = str(ch.get("id") or "")
+                    if not any(isinstance(r, dict) and str(r.get("studentUsername") or "").lower() == username and str(r.get("sourceId") or "") == source_id and r.get("archiveReason") == "signed-out" for r in sa):
+                        sa.append({"id":"sa-"+secrets.token_hex(6),"sourceId":source_id,"kind":"new-challenge","text":ch.get("text"),"createdAt":ch.get("setAt") or now_ms,"expiresAt":ch.get("expiresAt"),"archivedAt":now_ms,"archiveReason":"signed-out","studentUsername":username})
+                        moved += 1
+
+            archive = load_archive()
+            archive_changed = False
+            for a in archive:
+                if not isinstance(a, dict) or a.get("archiveReason") != "manual" or a.get("kind") not in ("message", "new-challenge"):
+                    continue
+                viewed = [str(v).lower() for v in (a.get("viewedBy") or [])]
+                if username not in viewed:
+                    continue
+                source_id = str(a.get("id") or "")
+                if any(isinstance(r, dict) and str(r.get("studentUsername") or "").lower() == username and str(r.get("sourceId") or "") == source_id and r.get("archiveReason") == "signed-out" for r in sa):
+                    continue
+                sa.append({"id":"sa-"+secrets.token_hex(6),"sourceId":source_id,"kind":a.get("kind"),"title":a.get("title"),"body":a.get("body"),"text":a.get("text"),"createdAt":a.get("createdAt") or now_ms,"expiresAt":a.get("expiresAt"),"archivedAt":now_ms,"archiveReason":"signed-out","studentUsername":username})
+                moved += 1
+                archive_changed = True
+
             if len(sa) > 500:
                 sa = sa[-500:]
             save_notifications(notifs)
+            save_messages(messages)
             save_student_archive(sa)
+            if archive_changed:
+                save_archive(archive)
 
             # Re-sweep: a notification whose only viewer just signed
             # out no longer meets the all-viewed condition and pops

@@ -180,6 +180,19 @@
   function notify() { subscribers.forEach(fn => { try { fn(state); } catch (e) { console.error(e); } }); }
   function update(mutator) { mutator(state); notify(); }
 
+  let _signoutSent = false;
+  function notifyServerSignout() {
+    const u = String(state.username || '').trim();
+    if (!u || _signoutSent) return;
+    _signoutSent = true;
+    const payload = JSON.stringify({ username: u });
+    try {
+      const blob = new Blob([payload], { type: 'application/json' });
+      if (navigator.sendBeacon && navigator.sendBeacon(API_BASE + '/api/signout', blob)) return;
+    } catch (err) {}
+    try { fetch(API_BASE + '/api/signout', { method:'POST', cache:'no-store', headers:{'Content-Type':'application/json'}, body:payload, keepalive:true }).catch(()=>{}); } catch (err) {}
+  }
+
   // ---------------- Actions ----------------
   const actions = {
     loadPoints() {
@@ -459,7 +472,7 @@
           // Fold the daily-challenge row into state.challenge. The
           // server already orders active so the daily one is last in
           // the challenge bucket; find by kind.
-          const daily = active.find(a => a && (a.kind === 'daily-challenge' || a.kind === 'new-challenge'));
+          const daily = active.find(a => a && !a.archived && (a.kind === 'daily-challenge' || a.kind === 'new-challenge'));
           const others = active.filter(a => a && a !== daily);
           update(s => {
             if (daily) {
@@ -905,7 +918,9 @@
     const listEl = $('#archiveList');
     if (!ctx || !listEl) return;
 
-    const archived = Array.isArray(state.archive.items) ? state.archive.items : [];
+    const globalArchived = Array.isArray(state.archive.items) ? state.archive.items : [];
+    const personalArchived = Array.isArray(state.archive.studentItems) ? state.archive.studentItems : [];
+    const archived = [...globalArchived, ...personalArchived];
     const myReplies = Array.isArray(state.myRepliesAll) ? state.myRepliesAll : [];
 
     // Build a quick lookup from parentId → { kind, title, body }
@@ -1076,6 +1091,7 @@
     if (reason === 'all-viewed') return 'everyone viewed';
     if (reason === 'manual')     return 'archived manually';
     if (reason === 'replaced')   return 'replaced';
+    if (reason === 'signed-out') return 'saved when you left';
     return '';
   }
 
@@ -1394,18 +1410,7 @@
     // Sign out: archive the student's viewed content, clear the signed-in
     // URL state, and immediately take them back to the Login page.
     $('#signoutBtn').addEventListener('click', () => {
-      const u = state.username;
-      if (u) {
-        try {
-          fetch(API_BASE + '/api/signout', {
-            method: 'POST',
-            cache: 'no-store',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ username: u }),
-            keepalive: true,
-          }).catch(() => {});
-        } catch (err) { /* ignore */ }
-      }
+      notifyServerSignout();
       try {
         window.location.replace('../Login/index.html');
       } catch (err) {
@@ -1899,6 +1904,8 @@
 
     // Delegated handler: tapping a row in the gradebook drawer opens
     // the read-only detail drawer for that student.
+    window.addEventListener('pagehide', () => notifyServerSignout(), { capture: true });
+
     document.addEventListener('click', e => {
       const trigger = e.target.closest('[data-action="openStudentDetail"]');
       if (!trigger) return;
