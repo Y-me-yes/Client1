@@ -1,0 +1,148 @@
+name: Configure Brevo email delivery
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/configure-brevo.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  configure:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Switch backend email provider to Brevo
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+
+          path = Path('server/server.py')
+          s = path.read_text(encoding='utf-8')
+
+          # Remove the optional Resend import block.
+          s = re.sub(
+              r'\ntry:\n    import resend\n    _HAVE_RESEND = True\nexcept Exception:\n    resend = None\n    _HAVE_RESEND = False\n',
+              '\n', s, count=1)
+
+          # Add stdlib HTTPS support.
+          s = s.replace('import urllib.parse\n', 'import urllib.parse\nimport urllib.request\nimport urllib.error\n', 1)
+
+          # Replace the provider implementation while preserving the existing Gmail fallback.
+          start = s.index('# ---------- email (lazy + safe) ----------')
+          gmail_start = s.index('def _send_via_gmail', start)
+          new_email = '''# ---------- email (lazy + safe) ----------
+
+# Hosted email uses Brevo's HTTPS transactional-email API. HTTPS works on
+# Render's free tier, unlike outbound SMTP. Gmail SMTP remains as a local
+# development fallback only.
+BREVO_API_KEY       = env("BREVO_API_KEY", "")
+BREVO_SENDER_EMAIL  = env("BREVO_SENDER_EMAIL", GMAIL_USER)
+
+# Keep this function name so the rest of the backend does not need changes.
+def can_send_email() -> bool:
+    return bool(BREVO_API_KEY and BREVO_SENDER_EMAIL) or (
+        bool(GMAIL_USER) and bool(GMAIL_APP_PASS) and not GMAIL_APP_PASS.startswith("replace_")
+    )
+
+def _send_via_resend(to: str, subject: str, text: str) -> bool:
+    """Compatibility name: sends through Brevo's HTTPS API."""
+    if not (BREVO_API_KEY and BREVO_SENDER_EMAIL):
+        return False
+    try:
+        payload = json.dumps({
+            "sender": {
+                "email": BREVO_SENDER_EMAIL,
+                "name": MAIL_FROM_NAME,
+            },
+            "to": [{"email": to}],
+            "subject": subject,
+            "textContent": text,
+        }).encode("utf-8")
+        req = urllib.request.Request(
+            "https://api.brevo.com/v3/smtp/email",
+            data=payload,
+            headers={
+                "accept": "application/json",
+                "api-key": BREVO_API_KEY,
+                "content-type": "application/json",
+            },
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=20) as response:
+            if 200 <= response.status < 300:
+                print(f"[email:brevo] accepted email for {to}", file=sys.stderr)
+                return True
+            print(f"[email:brevo] unexpected HTTP status: {response.status}", file=sys.stderr)
+            return False
+    except urllib.error.HTTPError as e:
+        try:
+            detail = e.read().decode("utf-8", errors="replace")[:500]
+        except Exception:
+            detail = str(e)
+        print(f"[email:brevo] send failed: HTTP {e.code} {detail}", file=sys.stderr)
+        return False
+    except Exception as e:
+        print(f"[email:brevo] send failed: {e}", file=sys.stderr)
+        return False
+
+'''
+          s = s[:start] + new_email + s[gmail_start:]
+
+          # Make the startup/provider diagnostics truthful.
+          s = s.replace(
+              'if not can_send_email():\n        print(f"[auth] No email backend configured — emails will be SKIPPED. Set RESEND_API_KEY (hosted) or GMAIL_USER + GMAIL_APP_PASSWORD (dev) to enable.", file=sys.stderr)\n    elif RESEND_API_KEY:\n        print(f"[auth] Email: Resend (sender={MAIL_FROM})", file=sys.stderr)\n    else:\n        print(f"[auth] Email: Gmail ({GMAIL_USER})", file=sys.stderr)',
+              'if not can_send_email():\n        print(f"[auth] No email backend configured — emails will be SKIPPED. Set BREVO_API_KEY + BREVO_SENDER_EMAIL (hosted) or GMAIL_USER + GMAIL_APP_PASSWORD (dev) to enable.", file=sys.stderr)\n    elif BREVO_API_KEY:\n        print(f"[auth] Email: Brevo (sender={BREVO_SENDER_EMAIL})", file=sys.stderr)\n    else:\n        print(f"[auth] Email: Gmail ({GMAIL_USER})", file=sys.stderr)',
+              1,
+          )
+
+          # Remove stale Resend references from the health/debug payload.
+          s = s.replace('"RESEND_API_KEY_set": bool((os.environ.get("RESEND_API_KEY") or "").strip()),',
+                        '"BREVO_API_KEY_set": bool((os.environ.get("BREVO_API_KEY") or "").strip()),', 1)
+
+          path.write_text(s, encoding='utf-8')
+
+          # Keep requirements tidy: Resend is no longer needed.
+          req = Path('server/requirements.txt')
+          if req.exists():
+              lines = [line for line in req.read_text(encoding='utf-8').splitlines()
+                       if not line.strip().lower().startswith('resend')]
+              req.write_text('\n'.join(lines) + '\n', encoding='utf-8')
+
+          # Update the example config to document the active email provider.
+          envp = Path('server/.env.example')
+          if envp.exists():
+              lines = envp.read_text(encoding='utf-8').splitlines()
+              out = []
+              for line in lines:
+                  if line.startswith('GMAIL_USER=') or line.startswith('GMAIL_APP_PASSWORD='):
+                      continue
+                  out.append(line)
+              # Insert Brevo settings near the other service settings.
+              idx = next((i for i, line in enumerate(out) if line.startswith('MAIL_FROM_NAME=')), len(out))
+              out[idx:idx] = [
+                  'BREVO_API_KEY=',
+                  'BREVO_SENDER_EMAIL=',
+              ]
+              envp.write_text('\n'.join(out).rstrip() + '\n', encoding='utf-8')
+          PY
+
+      - name: Commit changes
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add server/server.py server/requirements.txt server/.env.example
+          git diff --cached --quiet || git commit -m 'fix: send verification emails through Brevo'
+          git push
+
+      - name: Remove temporary workflow
+        run: |
+          rm -f .github/workflows/configure-brevo.yml
+          git add -A
+          git diff --cached --quiet || git commit -m 'chore: remove temporary Brevo setup workflow'
+          git push
