@@ -1495,7 +1495,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
         Messages don't auto-archive, don't track per-student views, and
         always accept replies (text + audio). The reply count is
         computed inline so the teacher sees a 'N replies' pill on the
-        active-list row without an extra round-trip."""
+        active-list row without an extra round-trip. View state is
+        tracked per student so viewed content can be saved to that
+        student's personal archive when they leave."""
         if not isinstance(m, dict):
             return None
         title = str(m.get("title") or "").strip()
@@ -1994,6 +1996,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
                             "expiresAt": None,
                             "archivedAt": now_ms,
                             "archiveReason": "manual",
+                            "viewedBy": list(m.get("viewedBy") or []),
+                            "returnType": None,
                         }
                         # Soft-archive: replace the row with the
                         # archived flag set so the active-list
