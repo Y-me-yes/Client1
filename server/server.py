@@ -62,6 +62,8 @@ import sys
 import threading
 import time
 import urllib.parse
+import urllib.error
+import urllib.request
 from email.mime.text import MIMEText
 from pathlib import Path
 
@@ -76,13 +78,6 @@ except Exception:
     pymongo = None
     MongoClient = None
     _HAVE_PYMONGO = False
-
-try:
-    import resend
-    _HAVE_RESEND = True
-except Exception:
-    resend = None
-    _HAVE_RESEND = False
 
 
 # ---------- env loading (tiny .env parser — no external deps) ----------
@@ -507,38 +502,54 @@ def consume_reset_token(token: str):
 
 # ---------- email (lazy + safe) ----------
 
-# Two backends:
-#   - Resend (HTTPS API) when RESEND_API_KEY is set. Works on Render's
-#     free tier (which blocks outbound SMTP). This is the preferred
-#     path on hosted deploys.
-#   - Gmail SMTP (smtplib) when only GMAIL_USER + GMAIL_APP_PASSWORD
-#     are set. Used for local dev with a real Gmail account.
-#   - Neither configured? Fall back to logging the message to stderr
-#     so the request still succeeds (the 5-digit code is visible in
-#     the server logs).
-
-RESEND_API_KEY = env("RESEND_API_KEY", "")
-MAIL_FROM      = env("MAIL_FROM", "onboarding@resend.dev")
-MAIL_FROM_NAME = env("MAIL_FROM_NAME", "Governor Yusuf")
+# Hosted email uses Brevo's HTTPS API because Render's free service
+# cannot reliably reach external SMTP servers. Gmail SMTP remains as a
+# local-development fallback when Brevo is not configured.
+BREVO_API_KEY       = env("BREVO_API_KEY", "")
+BREVO_SENDER_EMAIL  = env("BREVO_SENDER_EMAIL", GMAIL_USER)
+MAIL_FROM_NAME      = env("MAIL_FROM_NAME", "Governor Yusuf")
 
 def can_send_email() -> bool:
-    return bool(RESEND_API_KEY) or (bool(GMAIL_USER) and bool(GMAIL_APP_PASS) and not GMAIL_APP_PASS.startswith("replace_"))
+    return bool(BREVO_API_KEY and BREVO_SENDER_EMAIL) or (
+        bool(GMAIL_USER) and bool(GMAIL_APP_PASS)
+        and not GMAIL_APP_PASS.startswith("replace_")
+    )
 
-def _send_via_resend(to: str, subject: str, text: str) -> bool:
-    if not (_HAVE_RESEND and RESEND_API_KEY):
+def _send_via_brevo(to: str, subject: str, text: str) -> bool:
+    if not (BREVO_API_KEY and BREVO_SENDER_EMAIL):
         return False
+    payload = json.dumps({
+        "sender": {"email": BREVO_SENDER_EMAIL, "name": MAIL_FROM_NAME},
+        "to": [{"email": to}],
+        "subject": subject,
+        "textContent": text,
+    }).encode("utf-8")
+    req = urllib.request.Request(
+        "https://api.brevo.com/v3/smtp/email",
+        data=payload,
+        headers={
+            "api-key": BREVO_API_KEY,
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        },
+        method="POST",
+    )
     try:
-        resend.api_key = RESEND_API_KEY
-        from_email = f"{MAIL_FROM_NAME} <{MAIL_FROM}>" if MAIL_FROM_NAME else MAIL_FROM
-        resend.Emails.send({
-            "from": from_email,
-            "to":   [to],
-            "subject": subject,
-            "text": text,
-        })
-        return True
+        with urllib.request.urlopen(req, timeout=20) as response:
+            status = getattr(response, "status", 200)
+            if 200 <= status < 300:
+                return True
+            print(f"[email:brevo] unexpected HTTP status: {status}", file=sys.stderr)
+            return False
+    except urllib.error.HTTPError as e:
+        try:
+            detail = e.read().decode("utf-8", errors="replace")[:500]
+        except Exception:
+            detail = str(e)
+        print(f"[email:brevo] send failed: HTTP {e.code}: {detail}", file=sys.stderr)
+        return False
     except Exception as e:
-        print(f"[email:resend] send failed: {e}", file=sys.stderr)
+        print(f"[email:brevo] send failed: {e}", file=sys.stderr)
         return False
 
 def _send_via_gmail(to: str, subject: str, text: str) -> bool:
@@ -559,13 +570,13 @@ def _send_via_gmail(to: str, subject: str, text: str) -> bool:
 
 def send_email(to: str, subject: str, text: str) -> bool:
     """Send an email and report whether a configured provider accepted it."""
-    if _send_via_resend(to, subject, text):
-        print(f"[email] sent (resend) \"{subject}\" to {to}", file=sys.stderr)
+    if _send_via_brevo(to, subject, text):
+        print(f'[email] sent (brevo) "{subject}" to {to}', file=sys.stderr)
         return True
     if _send_via_gmail(to, subject, text):
-        print(f"[email] sent (gmail) \"{subject}\" to {to}", file=sys.stderr)
+        print(f'[email] sent (gmail) "{subject}" to {to}', file=sys.stderr)
         return True
-    print(f"[email] FAILED (no working email provider). Subject: \"{subject}\" recipient: {to}", file=sys.stderr)
+    print(f'[email] FAILED (no working email provider). Subject: "{subject}" recipient: {to}', file=sys.stderr)
     return False
 
 # ---------- HTTP server ----------
@@ -2835,9 +2846,9 @@ def main():
     _storage_indexes()
 
     if not can_send_email():
-        print(f"[auth] No email backend configured — emails will be SKIPPED. Set RESEND_API_KEY (hosted) or GMAIL_USER + GMAIL_APP_PASSWORD (dev) to enable.", file=sys.stderr)
-    elif RESEND_API_KEY:
-        print(f"[auth] Email: Resend (sender={MAIL_FROM})", file=sys.stderr)
+        print(f"[auth] No email backend configured — emails will be SKIPPED. Set BREVO_API_KEY + BREVO_SENDER_EMAIL (hosted) or GMAIL_USER + GMAIL_APP_PASSWORD (dev) to enable.", file=sys.stderr)
+    elif BREVO_API_KEY:
+        print(f"[auth] Email: Brevo (sender={BREVO_SENDER_EMAIL})", file=sys.stderr)
     else:
         print(f"[auth] Email: Gmail ({GMAIL_USER})", file=sys.stderr)
     print(f"[auth] 1% Healthy Habit backend listening on {PUBLIC_BASE_URL}", file=sys.stderr)
