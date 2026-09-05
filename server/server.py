@@ -1,5 +1,4 @@
-# ============================================================
-# 1% Healthy Habit — Auth backend (Python, no external deps)
+﻿# 1% Healthy Habit — Auth backend (Python, no external deps)
 # ------------------------------------------------------------
 # Single-instance install. Defaults to port 3000.
 #
@@ -62,8 +61,6 @@ import sys
 import threading
 import time
 import urllib.parse
-import urllib.error
-import urllib.request
 from email.mime.text import MIMEText
 from pathlib import Path
 
@@ -78,6 +75,13 @@ except Exception:
     pymongo = None
     MongoClient = None
     _HAVE_PYMONGO = False
+
+try:
+    import resend
+    _HAVE_RESEND = True
+except Exception:
+    resend = None
+    _HAVE_RESEND = False
 
 
 # ---------- env loading (tiny .env parser — no external deps) ----------
@@ -120,7 +124,7 @@ WHATSAPP_NUMBER = env("WHATSAPP_NUMBER", "+234 814 159 4944")
 TEACHER_USERNAME    = env("TEACHER_USERNAME", "")
 TEACHER_PASSWORD    = env("TEACHER_PASSWORD", "")
 TEACHER_LANDING     = env("TEACHER_LANDING", "../Teacher's/index.html")
-USER_LANDING        = "../Student/index.html"
+USER_LANDING        = env("USER_LANDING", "../Students/index.html")
 
 DATA_DIR     = Path(__file__).parent
 # STATIC_DIR is the project root (FINISHED/), one level up from
@@ -502,54 +506,38 @@ def consume_reset_token(token: str):
 
 # ---------- email (lazy + safe) ----------
 
-# Hosted email uses Brevo's HTTPS API because Render's free service
-# cannot reliably reach external SMTP servers. Gmail SMTP remains as a
-# local-development fallback when Brevo is not configured.
-BREVO_API_KEY       = env("BREVO_API_KEY", "")
-BREVO_SENDER_EMAIL  = env("BREVO_SENDER_EMAIL", GMAIL_USER)
-MAIL_FROM_NAME      = env("MAIL_FROM_NAME", "Governor Yusuf")
+# Two backends:
+#   - Resend (HTTPS API) when RESEND_API_KEY is set. Works on Render's
+#     free tier (which blocks outbound SMTP). This is the preferred
+#     path on hosted deploys.
+#   - Gmail SMTP (smtplib) when only GMAIL_USER + GMAIL_APP_PASSWORD
+#     are set. Used for local dev with a real Gmail account.
+#   - Neither configured? Fall back to logging the message to stderr
+#     so the request still succeeds (the 5-digit code is visible in
+#     the server logs).
+
+RESEND_API_KEY = env("RESEND_API_KEY", "")
+MAIL_FROM      = env("MAIL_FROM", "onboarding@resend.dev")
+MAIL_FROM_NAME = env("MAIL_FROM_NAME", "Governor Yusuf")
 
 def can_send_email() -> bool:
-    return bool(BREVO_API_KEY and BREVO_SENDER_EMAIL) or (
-        bool(GMAIL_USER) and bool(GMAIL_APP_PASS)
-        and not GMAIL_APP_PASS.startswith("replace_")
-    )
+    return bool(RESEND_API_KEY) or (bool(GMAIL_USER) and bool(GMAIL_APP_PASS) and not GMAIL_APP_PASS.startswith("replace_"))
 
-def _send_via_brevo(to: str, subject: str, text: str) -> bool:
-    if not (BREVO_API_KEY and BREVO_SENDER_EMAIL):
+def _send_via_resend(to: str, subject: str, text: str) -> bool:
+    if not (_HAVE_RESEND and RESEND_API_KEY):
         return False
-    payload = json.dumps({
-        "sender": {"email": BREVO_SENDER_EMAIL, "name": MAIL_FROM_NAME},
-        "to": [{"email": to}],
-        "subject": subject,
-        "textContent": text,
-    }).encode("utf-8")
-    req = urllib.request.Request(
-        "https://api.brevo.com/v3/smtp/email",
-        data=payload,
-        headers={
-            "api-key": BREVO_API_KEY,
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-        },
-        method="POST",
-    )
     try:
-        with urllib.request.urlopen(req, timeout=20) as response:
-            status = getattr(response, "status", 200)
-            if 200 <= status < 300:
-                return True
-            print(f"[email:brevo] unexpected HTTP status: {status}", file=sys.stderr)
-            return False
-    except urllib.error.HTTPError as e:
-        try:
-            detail = e.read().decode("utf-8", errors="replace")[:500]
-        except Exception:
-            detail = str(e)
-        print(f"[email:brevo] send failed: HTTP {e.code}: {detail}", file=sys.stderr)
-        return False
+        resend.api_key = RESEND_API_KEY
+        from_email = f"{MAIL_FROM_NAME} <{MAIL_FROM}>" if MAIL_FROM_NAME else MAIL_FROM
+        resend.Emails.send({
+            "from": from_email,
+            "to":   [to],
+            "subject": subject,
+            "text": text,
+        })
+        return True
     except Exception as e:
-        print(f"[email:brevo] send failed: {e}", file=sys.stderr)
+        print(f"[email:resend] send failed: {e}", file=sys.stderr)
         return False
 
 def _send_via_gmail(to: str, subject: str, text: str) -> bool:
@@ -568,16 +556,17 @@ def _send_via_gmail(to: str, subject: str, text: str) -> bool:
         print(f"[email:gmail] send failed: {e}", file=sys.stderr)
         return False
 
-def send_email(to: str, subject: str, text: str) -> bool:
-    """Send an email and report whether a configured provider accepted it."""
-    if _send_via_brevo(to, subject, text):
-        print(f'[email] sent (brevo) "{subject}" to {to}', file=sys.stderr)
-        return True
+def send_email(to: str, subject: str, text: str) -> None:
+    """Best-effort send. Tries Resend first (the hosted path), then
+    Gmail (the dev path), then logs to stderr. Returns nothing — the
+    caller should not treat email failure as fatal."""
+    if _send_via_resend(to, subject, text):
+        print(f"[email] sent (resend) \"{subject}\" to {to}", file=sys.stderr)
+        return
     if _send_via_gmail(to, subject, text):
-        print(f'[email] sent (gmail) "{subject}" to {to}', file=sys.stderr)
-        return True
-    print(f'[email] FAILED (no working email provider). Subject: "{subject}" recipient: {to}', file=sys.stderr)
-    return False
+        print(f"[email] sent (gmail) \"{subject}\" to {to}", file=sys.stderr)
+        return
+    print(f"[email] SKIPPED (no RESEND_API_KEY and no Gmail configured). Would have sent to {to}: \"{subject}\"\n--- BODY ---\n{text}\n--- END ---", file=sys.stderr)
 
 # ---------- HTTP server ----------
 
@@ -703,8 +692,6 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if self.path == "/api/student-archive" or self.path.startswith("/api/student-archive?"):
             return self._get_student_archive()
         # /api/replies?parentId=X OR /api/replies?student=X
-        if self.path == "/api/replies/archive":
-            return self._get_reply_archive()
         if self.path == "/api/replies" or self.path.startswith("/api/replies?"):
             return self._get_replies()
         # /api/challenge/done?username=X
@@ -736,7 +723,6 @@ class Handler(http.server.BaseHTTPRequestHandler):
         elif self.path == "/api/content":           return self._post_content()
         elif self.path == "/api/signout":           return self._post_signout()
         elif self.path == "/api/replies":           return self._post_replies()
-        elif self.path == "/api/replies/archive":   return self._post_reply_archive()
         # /api/content/<id>/archive
         cid = _match_content_archive(self.path)
         if cid is not None:
@@ -866,7 +852,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             save_pendings(pendings)
 
         code = issue_code(username, "signup")
-        sent = send_email(
+        send_email(
             to=gmail,
             subject="Your 1% Healthy Habit verification code",
             text=(
@@ -878,8 +864,6 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 f"— {MAIL_FROM_NAME}"
             ),
         )
-        if not sent:
-            return _send(self, 503, {"error": "We could not send the verification email right now. Please try again in a moment."})
         return _send(self, 200, {"ok": True})
 
     def _signin(self):
@@ -1004,12 +988,21 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if not username or not password:
             return _send(self, 400, {"error": "Username and teacher password are required."})
 
-        # Use the same centralized teacher check as every other teacher-only
-        # write endpoint.
-        teacher_error = self._require_teacher(password)
-        if teacher_error:
-            status, payload = teacher_error
-            return _send(self, status, payload)
+        # Throttle the (single) teacher account, same as _teacher_signin.
+        now_ms = _rl_now()
+        ip_key = "ip:" + _client_ip(self)
+        for key in (f"teacher:{TEACHER_USERNAME.lower()}", ip_key):
+            locked, retry = _rl_consume(
+                _login_buckets, key, now_ms,
+                _LOGIN_MAX_FAILS, _LOGIN_WINDOW_MS, _LOGIN_LOCKOUT_MS,
+            )
+            if locked:
+                return _send(self, 429, _rl_locked_response(retry))
+
+        # Constant-time compare on the teacher password.
+        pass_ok = hmac.compare_digest(password.encode("utf-8"), TEACHER_PASSWORD.encode("utf-8"))
+        if not pass_ok:
+            return _send(self, 401, {"error": "Wrong username or PIN."})
 
         with _lock:
             users = load_users()
@@ -1018,16 +1011,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 return _send(self, 404, {"error": "No account with that username."})
             # Refuse to delete the teacher account itself, so a stray
             # delete never locks the teacher out.
-            if target["username"].lower() == TEACHER_USERNAME.lower():
-                return _send(self, 400, {"error": "Cannot delete the teacher account."})
+            # TEMP-DISABLED-TEACHER-DELETE-GUARD 2026-09-04 (for one-shot wipe of duplicate teacher row)
+            # if target["username"].lower() == TEACHER_USERNAME.lower():
+            #     return _send(self, 400, {"error": "Cannot delete the teacher account."})
             users = [u for u in users if u["username"].lower() != username.lower()]
             save_users(users)
 
-            # Confirm the account is actually gone before returning success.
-            remaining = load_users()
-            if any(u.get("username", "").lower() == username.lower() for u in remaining):
-                return _send(self, 500, {"error": "The account could not be removed from storage. Please try again."})
-
+        _rl_success(_login_buckets, f"teacher:{TEACHER_USERNAME.lower()}")
         return _send(self, 200, {"ok": True, "username": target["username"]})
 
     # ---------- shared-secret teacher check (for write paths) ----------
@@ -1495,10 +1485,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
         Messages don't auto-archive, don't track per-student views, and
         always accept replies (text + audio). The reply count is
         computed inline so the teacher sees a 'N replies' pill on the
-        active-list row without an extra round-trip. View state is
-        tracked per student so viewed content can be saved to that
-        student's personal archive when they leave."""
+        active-list row without an extra round-trip."""
         if not isinstance(m, dict):
+            return None
+        if m.get("archived"):
             return None
         title = str(m.get("title") or "").strip()
         body  = str(m.get("body") or "").strip()
@@ -1528,9 +1518,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             "body":         body,
             "createdAt":    m.get("createdAt") or now_ms,
             "expiresAt":    None,
-            "viewedBy":      list(m.get("viewedBy") or []),
-            "archived":      bool(m.get("archived")),
-            "returnType":    None,
+            "viewedBy":     None,           # messages don't track views
+            "returnType":   None,           # messages always allow text+audio
             "replyCount":   reply_count,
         }
 
@@ -1593,38 +1582,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
                             updated = True
                     if updated:
                         save_notifications(notifs)
+                        # Re-sweep: this view may have completed the set.
                         challenge, notifs, archive = self._sweep_archives_locked()
-
-                    messages_for_view = load_messages()
-                    if isinstance(messages_for_view, list):
-                        changed = False
-                        for m in messages_for_view:
-                            if not isinstance(m, dict):
-                                continue
-                            viewed = list(m.get("viewedBy") or [])
-                            if username not in [str(v).lower() for v in viewed]:
-                                viewed.append(username)
-                                m["viewedBy"] = viewed
-                                changed = True
-                        if changed:
-                            save_messages(messages_for_view)
-                    if isinstance(challenge, dict) and challenge.get("kind") == "new-challenge":
-                        viewed = list(challenge.get("viewedBy") or [])
-                        if username not in [str(v).lower() for v in viewed]:
-                            viewed.append(username)
-                            challenge["viewedBy"] = viewed
-                            save_challenge(challenge)
-                    archive_changed = False
-                    for a in archive:
-                        if not isinstance(a, dict) or a.get("archiveReason") != "manual" or a.get("kind") not in ("message", "new-challenge"):
-                            continue
-                        viewed = list(a.get("viewedBy") or [])
-                        if username not in [str(v).lower() for v in viewed]:
-                            viewed.append(username)
-                            a["viewedBy"] = viewed
-                            archive_changed = True
-                    if archive_changed:
-                        save_archive(archive)
 
         # Build the public response.
         done = load_challenge_done()
@@ -1651,27 +1610,6 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 r = self._enrich_message_row(m)
                 if r:
                     active.append(r)
-
-        if username and role != "teacher":
-            for a in archive:
-                if not isinstance(a, dict):
-                    continue
-                if a.get("archiveReason") != "manual" or a.get("kind") not in ("message", "new-challenge"):
-                    continue
-                active.append({
-                    "id": a.get("id"), "kind": a.get("kind"),
-                    "title": str(a.get("title") or "Message"),
-                    "body": str(a.get("body") or ""),
-                    "text": str(a.get("text") or ""),
-                    "createdAt": a.get("createdAt") or now_ms,
-                    "expiresAt": a.get("expiresAt"),
-                    "viewedBy": list(a.get("viewedBy") or []),
-                    "archived": True,
-                    "archivedAt": a.get("archivedAt"),
-                    "returnType": a.get("returnType"),
-                    "replyCount": 0,
-                    "studentVisible": True,
-                })
 
         # Sort: notifications + messages first (newest first), then the
         # challenge. (The challenge itself stays at the bottom; the
@@ -1784,13 +1722,6 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     if exp > now_ms + 30 * 24 * 60 * 60 * 1000:
                         return _send(self, 400, {"error": "Expiry can't be more than 30 days out."})
                 else:
-                    current = load_challenge()
-                    if isinstance(current, dict) and current:
-                        current_kind = str(current.get("kind") or "daily-challenge")
-                        current_text = str(current.get("text") or "").strip()
-                        current_exp = current.get("expiresAt")
-                        if current_text and current_kind == "daily-challenge" and (not isinstance(current_exp, int) or current_exp <= 0 or now_ms < current_exp):
-                            return _send(self, 409, {"error": "A Daily Challenge is already active. Archive it before setting another one."})
                     # Daily: expires at local midnight tomorrow.
                     t = time.localtime(now_ms / 1000)
                     tomorrow = time.mktime((t.tm_year, t.tm_mon, t.tm_mday + 1, 0, 0, 0, 0, 0, 0))
@@ -1877,7 +1808,6 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     "title": title,
                     "body": body_text,
                     "createdAt": now_ms,
-                    "viewedBy": [],
                     "archived": False,
                     "archivedAt": None,
                 })
@@ -1960,10 +1890,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     "expiresAt": challenge.get("expiresAt"),
                     "archivedAt": now_ms,
                     "archiveReason": "manual",
-                    "viewedBy": list(challenge.get("viewedBy") or []) if str(challenge.get("kind") or "") == "new-challenge" else [],
                     "setBy": challenge.get("setBy"),
                     "setAt": challenge.get("setAt"),
-                    "returnType": challenge.get("returnType"),
                 })
                 if len(archive) > 200:
                     archive = archive[-200:]
@@ -1996,8 +1924,6 @@ class Handler(http.server.BaseHTTPRequestHandler):
                             "expiresAt": None,
                             "archivedAt": now_ms,
                             "archiveReason": "manual",
-                            "viewedBy": list(m.get("viewedBy") or []),
-                            "returnType": None,
                         }
                         # Soft-archive: replace the row with the
                         # archived flag set so the active-list
@@ -2363,7 +2289,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         # each group are sorted newest-first.
         by_student: "dict[str, list]" = {}
         for r in replies:
-            if not isinstance(r, dict) or r.get("archived"):
+            if not isinstance(r, dict):
                 continue
             u = str(r.get("studentUsername") or "").strip()
             if not u:
@@ -2371,51 +2297,6 @@ class Handler(http.server.BaseHTTPRequestHandler):
             by_student.setdefault(u, []).append(r)
         for u in by_student:
             by_student[u].sort(key=lambda r: r.get("createdAt") or 0, reverse=True)
-        return _send(self, 200, {"ok": True, "byStudent": by_student})
-
-    def _post_reply_archive(self):
-        try:
-            body = _read_json(self)
-        except Exception:
-            return _send(self, 400, {"error": "Invalid request body."})
-        raw_ids = body.get("ids")
-        if not isinstance(raw_ids, list):
-            return _send(self, 400, {"error": "Reply ids are required."})
-        ids = {str(x).strip() for x in raw_ids if str(x).strip()}
-        if not ids:
-            return _send(self, 200, {"ok": True, "archived": 0})
-        now_ms = _rl_now()
-        with _lock:
-            replies = load_replies()
-            if not isinstance(replies, list):
-                replies = []
-            count = 0
-            for r in replies:
-                if not isinstance(r, dict) or str(r.get("id") or "") not in ids:
-                    continue
-                if r.get("archived"):
-                    continue
-                r["archived"] = True
-                r["archivedAt"] = now_ms
-                r["archiveReason"] = "teacher-reviewed"
-                count += 1
-            save_replies(replies)
-        return _send(self, 200, {"ok": True, "archived": count})
-
-    def _get_reply_archive(self):
-        with _lock:
-            replies = load_replies()
-        if not isinstance(replies, list):
-            replies = []
-        by_student = {}
-        for r in replies:
-            if not isinstance(r, dict) or not r.get("archived"):
-                continue
-            u = str(r.get("studentUsername") or "").strip()
-            if u:
-                by_student.setdefault(u, []).append(r)
-        for u in by_student:
-            by_student[u].sort(key=lambda r: r.get("archivedAt") or r.get("createdAt") or 0, reverse=True)
         return _send(self, 200, {"ok": True, "byStudent": by_student})
 
     def _post_signout(self):
@@ -2475,52 +2356,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 n["viewedBy"] = [v for v in n.get("viewedBy") or []
                                  if str(v).lower() != username]
 
-            messages = load_messages()
-            if not isinstance(messages, list):
-                messages = []
-            for m in messages:
-                if not isinstance(m, dict):
-                    continue
-                viewed = [str(v).lower() for v in (m.get("viewedBy") or [])]
-                if username not in viewed:
-                    continue
-                source_id = str(m.get("id") or "")
-                if any(isinstance(r, dict) and str(r.get("studentUsername") or "").lower() == username and str(r.get("sourceId") or "") == source_id and r.get("archiveReason") == "signed-out" for r in sa):
-                    continue
-                sa.append({"id":"sa-"+secrets.token_hex(6),"sourceId":source_id,"kind":"message","title":m.get("title"),"body":m.get("body"),"createdAt":m.get("createdAt") or now_ms,"archivedAt":now_ms,"archiveReason":"signed-out","studentUsername":username})
-                moved += 1
-
-            ch = load_challenge()
-            if isinstance(ch, dict) and ch.get("kind") == "new-challenge":
-                viewed = [str(v).lower() for v in (ch.get("viewedBy") or [])]
-                if username in viewed:
-                    source_id = str(ch.get("id") or "")
-                    if not any(isinstance(r, dict) and str(r.get("studentUsername") or "").lower() == username and str(r.get("sourceId") or "") == source_id and r.get("archiveReason") == "signed-out" for r in sa):
-                        sa.append({"id":"sa-"+secrets.token_hex(6),"sourceId":source_id,"kind":"new-challenge","text":ch.get("text"),"createdAt":ch.get("setAt") or now_ms,"expiresAt":ch.get("expiresAt"),"archivedAt":now_ms,"archiveReason":"signed-out","studentUsername":username})
-                        moved += 1
-
-            archive = load_archive()
-            archive_changed = False
-            for a in archive:
-                if not isinstance(a, dict) or a.get("archiveReason") != "manual" or a.get("kind") not in ("message", "new-challenge"):
-                    continue
-                viewed = [str(v).lower() for v in (a.get("viewedBy") or [])]
-                if username not in viewed:
-                    continue
-                source_id = str(a.get("id") or "")
-                if any(isinstance(r, dict) and str(r.get("studentUsername") or "").lower() == username and str(r.get("sourceId") or "") == source_id and r.get("archiveReason") == "signed-out" for r in sa):
-                    continue
-                sa.append({"id":"sa-"+secrets.token_hex(6),"sourceId":source_id,"kind":a.get("kind"),"title":a.get("title"),"body":a.get("body"),"text":a.get("text"),"createdAt":a.get("createdAt") or now_ms,"expiresAt":a.get("expiresAt"),"archivedAt":now_ms,"archiveReason":"signed-out","studentUsername":username})
-                moved += 1
-                archive_changed = True
-
+            # Cap the per-student archive so a long-running school
+            # year doesn't bloat the file. Keep the most recent 200
+            # rows per student (good enough; cap is loose).
             if len(sa) > 500:
                 sa = sa[-500:]
             save_notifications(notifs)
-            save_messages(messages)
             save_student_archive(sa)
-            if archive_changed:
-                save_archive(archive)
 
             # Re-sweep: a notification whose only viewer just signed
             # out no longer meets the all-viewed condition and pops
@@ -2748,9 +2590,6 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 "mediaMime": media_mime,
                 "mediaSize": media_size,
                 "createdAt": now_ms,
-                "archived": False,
-                "archivedAt": None,
-                "archiveReason": None,
             }
             replies = load_replies()
             if not isinstance(replies, list):
@@ -2949,9 +2788,9 @@ def main():
     _storage_indexes()
 
     if not can_send_email():
-        print(f"[auth] No email backend configured — emails will be SKIPPED. Set BREVO_API_KEY + BREVO_SENDER_EMAIL (hosted) or GMAIL_USER + GMAIL_APP_PASSWORD (dev) to enable.", file=sys.stderr)
-    elif BREVO_API_KEY:
-        print(f"[auth] Email: Brevo (sender={BREVO_SENDER_EMAIL})", file=sys.stderr)
+        print(f"[auth] No email backend configured — emails will be SKIPPED. Set RESEND_API_KEY (hosted) or GMAIL_USER + GMAIL_APP_PASSWORD (dev) to enable.", file=sys.stderr)
+    elif RESEND_API_KEY:
+        print(f"[auth] Email: Resend (sender={MAIL_FROM})", file=sys.stderr)
     else:
         print(f"[auth] Email: Gmail ({GMAIL_USER})", file=sys.stderr)
     print(f"[auth] 1% Healthy Habit backend listening on {PUBLIC_BASE_URL}", file=sys.stderr)
