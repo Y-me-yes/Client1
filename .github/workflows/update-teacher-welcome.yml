@@ -34,20 +34,15 @@ jobs:
               </div>
               <div class="dialog-body">
                 <p class="dialog-context">You should know, you’re not just opening a dashboard. You’re stepping into a community where your guidance can help students grow — one small, healthy habit at a time.</p>
-
                 <p>As a teacher, you have an important role in helping your students build consistency, self-discipline, positive habits, accountability, and personal growth.</p>
-
                 <p>Use this forum to manage your students, award points, create challenges, send notifications, review their replies, and encourage them along their journey.</p>
-
                 <p><strong>A few things to remember:</strong></p>
                 <ol>
                   <li><strong>Lead by example.</strong> Your encouragement can make a real difference.</li>
                   <li><strong>Celebrate consistency.</strong> Small improvements deserve recognition.</li>
                   <li><strong>Keep students growing.</strong> Every chalenge, point, and piece of feeedback is an opportunity to help them become better.</li>
                 </ol>
-
                 <p><strong>Together, we can help students become 1% better every day.</strong></p>
-
                 <p>Welcome to the teacher's side of the circle. 🌱</p>
               </div>
               <div class="dialog-footer">
@@ -57,34 +52,37 @@ jobs:
           </div>
           '''
 
-          def replace_div_by_id(text, element_id, replacement):
-              m = re.search(r'<div\\b[^>]*\\bid=["\\']' + re.escape(element_id) + r'["\\'][^>]*>', text)
+          marker = '  <!-- ===== AWARD SCORE DIALOG ===== -->'
+          if marker not in s:
+              raise RuntimeError('Award Score dialog marker not found')
+
+          if 'id="welcomeDialog"' not in s:
+              s = s.replace(marker, welcome + "\n\n" + marker, 1)
+          else:
+              pattern = r"<div\b[^>]*\bid=[\"']welcomeDialog[\"'][^>]*>"
+              m = re.search(pattern, s)
               if not m:
-                  return None
+                  raise RuntimeError('Existing welcomeDialog could not be located')
               start = m.start()
               depth = 0
-              token_re = re.compile(r'<div\\b[^>]*>|</div\\s*>', re.I)
-              for tok in token_re.finditer(text, m.start()):
-                  if tok.group(0).lower().startswith('</div'):
+              tag_re = re.compile(r"<div\b[^>]*>|</div\s*>", re.I)
+              end = None
+              for tag in tag_re.finditer(s, m.start()):
+                  if tag.group(0).lower().startswith('</div'):
                       depth -= 1
                       if depth == 0:
-                          return text[:start] + replacement.strip() + text[tok.end():]
+                          end = tag.end()
+                          break
                   else:
                       depth += 1
-              raise RuntimeError(f'Could not find closing div for {element_id}')
+              if end is None:
+                  raise RuntimeError('Existing welcomeDialog closing tag not found')
+              s = s[:start] + welcome.strip() + s[end:]
 
-          updated = replace_div_by_id(s, 'welcomeDialog', welcome)
-          if updated is None:
-              marker = '  <!-- ===== AWARD SCORE DIALOG ===== -->'
-              if marker not in s:
-                  raise RuntimeError('Award Score dialog marker not found')
-              updated = s.replace(marker, welcome + '\\n\\n' + marker, 1)
-
-          p.write_text(updated, encoding='utf-8')
+          p.write_text(s, encoding='utf-8')
 
       - name: Remove one-shot workflow
-        run: |
-          rm -f .github/workflows/update-teacher-welcome.yml
+        run: rm -f .github/workflows/update-teacher-welcome.yml
 
       - name: Commit changes
         run: |
