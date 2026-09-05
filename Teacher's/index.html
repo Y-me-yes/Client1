@@ -444,49 +444,31 @@
   </div>
 
   <!-- ===== WELCOME DIALOG (first-visit) ===== -->
-  <div class="dialog-backdrop welcome-backdrop" id="welcomeDialog" hidden>
-    <div class="dialog welcome-dialog" role="dialog" aria-modal="true" aria-labelledby="welcomeTitle">
-      <div class="welcome-hero">
-        <div class="welcome-eyebrow">
-          <span class="welcome-dot" aria-hidden="true"></span>
-          WELCOME
-        </div>
-        <h2 id="welcomeTitle" class="welcome-title">We are excited to have you here!</h2>
-        <p class="welcome-lede">Before we begin, you should know you're not just opening a website. You're stepping into a community that wants to see you grow — one small, healthy habit at a time.</p>
-        <button class="btn btn-primary welcome-cta" data-close-dialog="welcomeDialog" type="button">
-          Let's begin
-          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <line x1="5" y1="12" x2="19" y2="12"></line>
-            <polyline points="12 5 19 12 12 19"></polyline>
-          </svg>
-        </button>
-      </div>
-
-      <div class="welcome-body">
-        <p class="welcome-paragraph">
-          This is more than just a website &mdash; it is a community designed to help you grow <strong>1% better every day</strong> through healthy habits, self-discipline, positive choices, accountability, and personal growth.
-        </p>
-        <p class="welcome-paragraph">
-          Track your daily habits, earn points, participate in challenges, learn, stay accountable, and grow alongside other amazing members.
-        </p>
-
-        <div class="welcome-pull">
-          <span class="welcome-pull-mark" aria-hidden="true">&ldquo;</span>
-          <p>You don't have to change everything at once. Small positive actions repeated every day can create lasting change.&rdquo;</p>
-        </div>
-
-        <ul class="welcome-verbs">
-          <li><span class="welcome-verb-num" aria-hidden="true">1</span><span><strong>Show up.</strong> Be present, even on the days you don't feel like it.</span></li>
-          <li><span class="welcome-verb-num" aria-hidden="true">2</span><span><strong>Stay consistent.</strong> Tiny actions, done often, beat rare big ones.</span></li>
-          <li><span class="welcome-verb-num" aria-hidden="true">3</span><span><strong>Keep growing.</strong> A better version of you is being built, one day at a time.</span></li>
-        </ul>
-
-        <p class="welcome-signoff">
-          Welcome to your journey towards a healthier, more disciplined, and better version of yourself.
-        </p>
-      </div>
+  <!-- ===== WELCOME DIALOG (first visit per tab session) ===== -->
+<div class="welcome-backdrop" id="welcomeDialog" hidden>
+  <div class="dialog dialog-wide" role="dialog" aria-modal="true" aria-labelledby="welcomeTitle">
+    <div class="dialog-header">
+      <h2 id="welcomeTitle">Welcome to 1% Healthy Habit!</h2>
+      <button class="icon-btn" data-close-dialog="welcomeDialog" type="button" aria-label="Close">&times;</button>
+    </div>
+    <div class="dialog-body">
+      <p class="dialog-context">You should know, you’re not just opening a dashboard. You’re stepping into a community where your guidance can help students grow — one small, healthy habit at a time.</p>
+      <p>As a teacher, you have an important role in helping your students build consistency, self-discipline, positive habits, accountability, and personal growth.</p>
+      <p>Use this forum to manage your students, award points, create challenges, send notifications, review their replies, and encourage them along their journey.</p>
+      <p><strong>A few things to remember:</strong></p>
+      <ol>
+        <li><strong>Lead by example.</strong> Your encouragement can make a real difference.</li>
+        <li><strong>Celebrate consistency.</strong> Small improvements deserve recognition.</li>
+        <li><strong>Keep students growing.</strong> Every chalenge, point, and piece of feeedback is an opportunity to help them become better.</li>
+      </ol>
+      <p><strong>Together, we can help students become 1% better every day.</strong></p>
+      <p>Welcome to the teacher's side of the circle. 🌱</p>
+    </div>
+    <div class="dialog-footer">
+      <button class="btn btn-primary" id="welcomeCtaBtn" data-close-dialog="welcomeDialog" type="button">Got it — let's begin</button>
     </div>
   </div>
+</div>
 
   <!-- ===== FAB (floating action button) ===== -->
   <button id="fabBtn" class="fab" type="button" aria-label="Create new content">
