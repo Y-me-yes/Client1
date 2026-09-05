@@ -2058,13 +2058,10 @@
       actions.loadReplies();
     }, 30 * 1000);
 
-    // First-visit welcome: shows the very first time this tab opens the app.
-    // The flag lives in sessionStorage (cleared when the tab/window closes), so
-    // reloading the page keeps it hidden — but launching Start Website.bat again
-    // opens a fresh tab/session, so the welcome reappears.
-    let hasSeenWelcome = false;
-    try { hasSeenWelcome = sessionStorage.getItem(WELCOME_KEY) === '1'; } catch (err) { /* ignore */ }
-    if (!hasSeenWelcome) actions.openWelcome();
+    // Welcome popup: show it whenever the Teacher page is opened.
+    // Closing it still dismisses it for the current page; a new page load
+    // starts with the welcome visible again.
+    actions.openWelcome();
   }
 
   if (document.readyState === 'loading') {
