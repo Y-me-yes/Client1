@@ -1,0 +1,33 @@
+name: Fix lifecycle workflow
+on:
+  pull_request_target:
+    types: [opened, synchronize]
+permissions:
+  contents: write
+jobs:
+  fix:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          repository: ${{ github.repository }}
+          fetch-depth: 0
+      - name: Fix temporary workflow syntax
+        shell: python
+        run: |
+          from pathlib import Path
+          import subprocess
+          p = Path('.github/workflows/trigger-content-lifecycle.yml')
+          if p.exists():
+              s = p.read_text(encoding='utf-8')
+              bad = '''subprocess.run(['git','add','server/server.py','Student/js/app.js',"Teacher's/js/app.js","Teacher's/index.html','.github/workflows/trigger-content-lifecycle.yml'],check=True)'''
+              good = '''subprocess.run(['git','add','server/server.py','Student/js/app.js',"Teacher's/js/app.js","Teacher's/index.html",".github/workflows/trigger-content-lifecycle.yml"],check=True)'''
+              if bad in s:
+                  p.write_text(s.replace(bad, good, 1), encoding='utf-8')
+                  subprocess.run(['git','config','user.name','github-actions[bot]'], check=True)
+                  subprocess.run(['git','config','user.email','41898282+github-actions[bot]@users.noreply.github.com'], check=True)
+                  subprocess.run(['git','add',str(p)], check=True)
+                  subprocess.run(['git','commit','-m','fix: correct lifecycle workflow syntax'], check=True)
+                  subprocess.run(['git','push','origin','HEAD:${{ github.event.pull_request.head.ref }}'], check=True)
