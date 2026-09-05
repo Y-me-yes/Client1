@@ -1,0 +1,39 @@
+name: Fix student challenge empty state
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Add hidden-state CSS rule
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path("Student/css/styles.css")
+          text = path.read_text(encoding="utf-8")
+          old = ".challenge-empty {\n  display: flex;"
+          new = ".challenge-empty[hidden] { display: none !important; }\n\n.challenge-empty {\n  display: flex;"
+          if ".challenge-empty[hidden]" not in text:
+              if old not in text:
+                  raise SystemExit("Expected challenge-empty CSS block was not found")
+              text = text.replace(old, new, 1)
+              path.write_text(text, encoding="utf-8")
+          PY
+
+      - name: Commit fix and remove temporary workflow
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Student/css/styles.css
+          git rm .github/workflows/fix-student-challenge-empty-state.yml
+          git diff --cached --quiet || git commit -m "fix: hide student challenge empty state when challenge exists"
+          git push
