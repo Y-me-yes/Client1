@@ -653,6 +653,7 @@ body {
 .tab.is-active .tab-count { background: var(--primary-cont); color: var(--primary); }
 
 .tab-panel { display: flex; flex-direction: column; gap: 8px; min-height: 60px; }
+.tab-panel[hidden] { display: none !important; }
 .tab-panel-row {
   display: grid;
   grid-template-columns: 1fr auto auto auto;
