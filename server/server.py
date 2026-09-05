@@ -1,4 +1,4 @@
-﻿# 1% Healthy Habit — Auth backend (Python, no external deps)
+# 1% Healthy Habit — Auth backend (Python, no external deps)
 # ------------------------------------------------------------
 # Single-instance install. Defaults to port 3000.
 #
@@ -665,6 +665,27 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 "MONGODB_URI_first30": (os.environ.get("MONGODB_URI") or "")[:30],
                 "RESEND_API_KEY_set": bool((os.environ.get("RESEND_API_KEY") or "").strip()),
             })
+        # Debug: count of records in every collection. Read-only. Same
+        # secret gate. Lets the user confirm a wipe without changing
+        # anything. URL: GET /api/_counts?k=client1-debug
+        if _debug_path == "/api/_counts":
+            qs = parse_qs(urlparse(self.path).query)
+            if qs.get("k", [None])[0] != "client1-debug":
+                return _send(self, 404, {"error": "Not found."})
+            return _send(self, 200, {
+                "users":           len(load_users()),
+                "pendings":        len(load_pendings()),
+                "codes":           len(load_codes()),
+                "resets":          len(load_resets()),
+                "challenge":       len(load_challenge()) if isinstance(load_challenge(), dict) else 0,
+                "challenge_done":  len(load_challenge_done()),
+                "notifications":   len(load_notifications()),
+                "archive":         len(load_archive()),
+                "messages":        len(load_messages()),
+                "replies":         len(load_replies()),
+                "student_archive": len(load_student_archive()),
+                "storage":         _storage_mode,
+            })
         # Serve static files from the project root (FINISHED/) so the
         # hosted service can serve Login/, Students/, Student/, Teacher's/
         # out of the same Python process. The static dir is the parent
@@ -727,6 +748,36 @@ class Handler(http.server.BaseHTTPRequestHandler):
         cid = _match_content_archive(self.path)
         if cid is not None:
             return self._post_content_archive(cid)
+        # Debug: wipe EVERY collection in one shot. Same secret gate as
+        # /api/_env and /api/_counts. Use this to reset the database to
+        # a pristine state before handing the URL to a new client. The
+        # `?k=` query string must match. Optional `?confirm=YES` so a
+        # paste that drops the body still doesn't wipe.
+        from urllib.parse import urlparse, parse_qs
+        _wipe_path = urlparse(self.path).path
+        if _wipe_path == "/api/_wipe_all":
+            qs = parse_qs(urlparse(self.path).query)
+            if qs.get("k", [None])[0] != "client1-debug":
+                return _send(self, 404, {"error": "Not found."})
+            if qs.get("confirm", [None])[0] != "YES":
+                return _send(self, 400, {
+                    "error": "Refusing to wipe without confirm=YES. "
+                             "POST /api/_wipe_all?k=client1-debug&confirm=YES"
+                })
+            with _lock:
+                save_users([])
+                save_pendings({})
+                save_codes({})
+                save_resets({})
+                save_challenge({})
+                save_challenge_done({})
+                save_notifications([])
+                save_archive([])
+                save_messages([])
+                save_replies([])
+                save_student_archive([])
+            print("[wipe] all collections cleared", file=sys.stderr, flush=True)
+            return _send(self, 200, {"ok": True, "wiped": True})
         return _send(self, 404, {"error": "Not found"})
 
     def do_PUT(self):  # noqa: N802
