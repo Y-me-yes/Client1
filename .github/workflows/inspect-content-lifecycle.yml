@@ -1,0 +1,25 @@
+name: inspect-content-lifecycle
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/inspect-content-lifecycle.yml'
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Inspect content lifecycle code
+        shell: bash
+        run: |
+          set -e
+          echo '--- SERVER METHODS ---'
+          grep -nE '^    def (_get_content|_post_content|_post_content_archive|_post_signout|_sweep_archives_locked)' server/server.py || true
+          echo '--- SERVER CONTENT REFERENCES ---'
+          grep -nE 'viewedBy|student-archive|studentArchive|archived|archiveReason|daily-challenge|new-challenge' server/server.py | head -n 180 || true
+          echo '--- STUDENT CONTENT REFERENCES ---'
+          grep -nE 'api/content|studentArchive|student-archive|archive|viewedBy|daily-challenge|new-challenge|beforeunload|pagehide|signout' Student/js/app.js | head -n 220 || true
+          echo '--- TEACHER CONTENT REFERENCES ---'
+          grep -nE 'api/content|daily-challenge|new-challenge|archive' "Teacher's"/js/app.js | head -n 180 || true
