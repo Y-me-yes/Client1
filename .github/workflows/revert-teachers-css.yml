@@ -1,0 +1,43 @@
+name: Revert Teacher's CSS change
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  revert-css:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Revert the CSS-only change
+        shell: python
+        run: |
+          from pathlib import Path
+          path = Path("Teacher's/css/styles.css")
+          text = path.read_text(encoding="utf-8")
+          line = ".tab-panel[hidden] { display: none !important; }\n"
+          if line in text:
+              text = text.replace(line, "", 1)
+              path.write_text(text, encoding="utf-8")
+              print("Reverted the Teacher's CSS change.")
+          else:
+              print("CSS change not present; nothing to revert.")
+
+      - name: Commit and remove this one-time workflow
+        shell: bash
+        run: |
+          rm -f .github/workflows/revert-teachers-css.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "Teacher's/css/styles.css" .github/workflows/revert-teachers-css.yml
+          if git diff --cached --quiet; then
+            echo "No changes to commit."
+            exit 0
+          fi
+          git commit -m "revert: restore Teacher's CSS"
+          git push
