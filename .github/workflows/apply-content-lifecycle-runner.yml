@@ -1,0 +1,86 @@
+name: Apply content lifecycle runner
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/apply-content-lifecycle-runner.yml'
+      - '.github/content-lifecycle-run.txt'
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Apply lifecycle behavior and wording
+        shell: python
+        run: |
+          from pathlib import Path
+          import re, subprocess
+          root=Path('.')
+          server=root/'server/server.py'; s=server.read_text(encoding='utf-8')
+          def R(old,new,label):
+              global s
+              n=s.count(old)
+              if n!=1: raise SystemExit(f'{label}: expected 1 match, found {n}')
+              s=s.replace(old,new,1)
+          s=re.sub(r'(?m)^        if m\.get\("archived"\):\n            return None\n','',s,count=1)
+          old='''            "viewedBy":      None,           # messages don't track views\n            "returnType":    None,           # messages always allow text+audio\n            "replyCount":   reply_count,'''
+          if old not in s:
+              old='''            "viewedBy":     None,           # messages don't track views\n            "returnType":   None,           # messages always allow text+audio\n            "replyCount":   reply_count,'''
+          R(old,'''            "viewedBy":      list(m.get("viewedBy") or []),\n            "archived":      bool(m.get("archived")),\n            "returnType":    None,\n            "replyCount":   reply_count,''','message enrichment')
+          R('''        if isinstance(messages, list):\n            for m in messages:\n                r = self._enrich_message_row(m)\n                if r:\n                    active.append(r)\n\n        # Sort: notifications + messages first (newest first), then the\n        # challenge.''','''        if isinstance(messages, list):\n            for m in messages:\n                r = self._enrich_message_row(m)\n                if r:\n                    active.append(r)\n\n        if username and role != "teacher":\n            for a in archive:\n                if not isinstance(a, dict):\n                    continue\n                if a.get("archiveReason") != "manual" or a.get("kind") not in ("message", "new-challenge"):\n                    continue\n                active.append({\n                    "id": a.get("id"), "kind": a.get("kind"),\n                    "title": str(a.get("title") or "Message"),\n                    "body": str(a.get("body") or ""),\n                    "text": str(a.get("text") or ""),\n                    "createdAt": a.get("createdAt") or now_ms,\n                    "expiresAt": a.get("expiresAt"),\n                    "viewedBy": list(a.get("viewedBy") or []),\n                    "archived": True,\n                    "archivedAt": a.get("archivedAt"),\n                    "returnType": a.get("returnType"),\n                    "replyCount": 0,\n                    "studentVisible": True,\n                })\n\n        # Sort: notifications + messages first (newest first), then the\n        # challenge.''','student archived feed')
+          R('''                else:\n                    # Daily: expires at local midnight tomorrow.\n                    t = time.localtime(now_ms / 1000)''','''                else:\n                    current = load_challenge()\n                    if isinstance(current, dict) and current:\n                        current_kind = str(current.get("kind") or "daily-challenge")\n                        current_text = str(current.get("text") or "").strip()\n                        current_exp = current.get("expiresAt")\n                        if current_text and current_kind == "daily-challenge" and (not isinstance(current_exp, int) or current_exp <= 0 or now_ms < current_exp):\n                            return _send(self, 409, {"error": "A Daily Challenge is already active. Archive it before setting another one."})\n                    # Daily: expires at local midnight tomorrow.\n                    t = time.localtime(now_ms / 1000)''','daily uniqueness')
+          R('''                    "archiveReason": "manual",\n                    "setBy": challenge.get("setBy"),\n                    "setAt": challenge.get("setAt"),\n                })''','''                    "archiveReason": "manual",\n                    "viewedBy": list(challenge.get("viewedBy") or []) if str(challenge.get("kind") or "") == "new-challenge" else [],\n                    "setBy": challenge.get("setBy"),\n                    "setAt": challenge.get("setAt"),\n                    "returnType": challenge.get("returnType"),\n                })''','challenge archive state')
+          R('''                    "createdAt": now_ms,\n                    "archived": False,\n                    "archivedAt": None,\n                })''','''                    "createdAt": now_ms,\n                    "viewedBy": [],\n                    "archived": False,\n                    "archivedAt": None,\n                })''','message creation state')
+          R('''                    if updated:\n                        save_notifications(notifs)\n                        # Re-sweep: this view may have completed the set.\n                        challenge, notifs, archive = self._sweep_archives_locked()''','''                    if updated:\n                        save_notifications(notifs)\n                        challenge, notifs, archive = self._sweep_archives_locked()\n\n                    messages_for_view = load_messages()\n                    if isinstance(messages_for_view, list):\n                        changed = False\n                        for m in messages_for_view:\n                            if not isinstance(m, dict): continue\n                            viewed = list(m.get("viewedBy") or [])\n                            if username not in [str(v).lower() for v in viewed]:\n                                viewed.append(username); m["viewedBy"] = viewed; changed = True\n                        if changed: save_messages(messages_for_view)\n                    if isinstance(challenge, dict) and challenge.get("kind") == "new-challenge":\n                        viewed = list(challenge.get("viewedBy") or [])\n                        if username not in [str(v).lower() for v in viewed]:\n                            viewed.append(username); challenge["viewedBy"] = viewed; save_challenge(challenge)\n                    archive_changed = False\n                    for a in archive:\n                        if not isinstance(a, dict) or a.get("archiveReason") != "manual" or a.get("kind") not in ("message", "new-challenge"): continue\n                        viewed = list(a.get("viewedBy") or [])\n                        if username not in [str(v).lower() for v in viewed]:\n                            viewed.append(username); a["viewedBy"] = viewed; archive_changed = True\n                    if archive_changed: save_archive(archive)''','view tracking')
+          R('''            # Cap the per-student archive so a long-running school\n            # year doesn't bloat the file. Keep the most recent 200\n            # rows per student (good enough; cap is loose).\n            if len(sa) > 500:\n                sa = sa[-500:]\n            save_notifications(notifs)\n            save_student_archive(sa)\n\n            # Re-sweep: a notification whose only viewer just signed\n            # out no longer meets the all-viewed condition and pops\n            # back into the active list.''','''            messages = load_messages()\n            if not isinstance(messages, list): messages = []\n            for m in messages:\n                if not isinstance(m, dict): continue\n                viewed = [str(v).lower() for v in (m.get("viewedBy") or [])]\n                if username not in viewed: continue\n                source_id = str(m.get("id") or "")\n                if any(isinstance(r, dict) and str(r.get("studentUsername") or "").lower() == username and str(r.get("sourceId") or "") == source_id and r.get("archiveReason") == "signed-out" for r in sa): continue\n                sa.append({"id":"sa-"+secrets.token_hex(6),"sourceId":source_id,"kind":"message","title":m.get("title"),"body":m.get("body"),"createdAt":m.get("createdAt") or now_ms,"archivedAt":now_ms,"archiveReason":"signed-out","studentUsername":username}); moved += 1\n            ch = load_challenge()\n            if isinstance(ch, dict) and ch.get("kind") == "new-challenge":\n                viewed = [str(v).lower() for v in (ch.get("viewedBy") or [])]\n                if username in viewed:\n                    source_id = str(ch.get("id") or "")\n                    if not any(isinstance(r, dict) and str(r.get("studentUsername") or "").lower() == username and str(r.get("sourceId") or "") == source_id and r.get("archiveReason") == "signed-out" for r in sa):\n                        sa.append({"id":"sa-"+secrets.token_hex(6),"sourceId":source_id,"kind":"new-challenge","text":ch.get("text"),"createdAt":ch.get("setAt") or now_ms,"expiresAt":ch.get("expiresAt"),"archivedAt":now_ms,"archiveReason":"signed-out","studentUsername":username}); moved += 1\n            archive = load_archive(); archive_changed = False\n            for a in archive:\n                if not isinstance(a, dict) or a.get("archiveReason") != "manual" or a.get("kind") not in ("message", "new-challenge"): continue\n                viewed = [str(v).lower() for v in (a.get("viewedBy") or [])]\n                if username not in viewed: continue\n                source_id = str(a.get("id") or "")\n                if any(isinstance(r, dict) and str(r.get("studentUsername") or "").lower() == username and str(r.get("sourceId") or "") == source_id and r.get("archiveReason") == "signed-out" for r in sa): continue\n                sa.append({"id":"sa-"+secrets.token_hex(6),"sourceId":source_id,"kind":a.get("kind"),"title":a.get("title"),"body":a.get("body"),"text":a.get("text"),"createdAt":a.get("createdAt") or now_ms,"expiresAt":a.get("expiresAt"),"archivedAt":now_ms,"archiveReason":"signed-out","studentUsername":username}); moved += 1; archive_changed = True\n            if len(sa) > 500: sa = sa[-500:]\n            save_notifications(notifs); save_messages(messages); save_student_archive(sa)\n            if archive_changed: save_archive(archive)\n\n            # Re-sweep: a notification whose only viewer just signed\n            # out no longer meets the all-viewed condition and pops\n            # back into the active list.''','signout expansion')
+          server.write_text(s,encoding='utf-8')
+
+          q=student; j=q.read_text(encoding='utf-8')
+          j=replace_once(j,"const daily = active.find(a => a && (a.kind === 'daily-challenge' || a.kind === 'new-challenge'));","const daily = active.find(a => a && !a.archived && (a.kind === 'daily-challenge' || a.kind === 'new-challenge'));",'student challenge')
+          j=replace_once(j,'''    const archived = Array.isArray(state.archive.items) ? state.archive.items : [];\n    const myReplies = Array.isArray(state.myRepliesAll) ? state.myRepliesAll : [];''','''    const globalArchived = Array.isArray(state.archive.items) ? state.archive.items : [];\n    const personalArchived = Array.isArray(state.archive.studentItems) ? state.archive.studentItems : [];\n    const archived = [...globalArchived, ...personalArchived];\n    const myReplies = Array.isArray(state.myRepliesAll) ? state.myRepliesAll : [];''','student archive')
+          j=replace_once(j,'''    if (reason === 'replaced')   return 'replaced';\n    return '';''','''    if (reason === 'replaced')   return 'replaced';\n    if (reason === 'signed-out') return 'saved when you left';\n    return '';''','archive reason')
+          marker='  // ---------------- Actions ----------------\n'
+          helper='''  let _signoutSent = false;\n  function notifyServerSignout() {\n    const u = String(state.username || '').trim();\n    if (!u || _signoutSent) return;\n    _signoutSent = true;\n    const payload = JSON.stringify({ username: u });\n    try {\n      const blob = new Blob([payload], { type: 'application/json' });\n      if (navigator.sendBeacon && navigator.sendBeacon(API_BASE + '/api/signout', blob)) return;\n    } catch (err) {}\n    try { fetch(API_BASE + '/api/signout', { method:'POST', cache:'no-store', headers:{'Content-Type':'application/json'}, body:payload, keepalive:true }).catch(()=>{}); } catch (err) {}\n  }\n\n'''
+          if j.count(marker)!=1: raise SystemExit('student helper marker')
+          j=j.replace(marker,helper+marker,1)
+          j=replace_once(j,'''    $('#signoutBtn').addEventListener('click', () => {\n      const u = state.username;\n      if (u) {\n        try {\n          fetch(API_BASE + '/api/signout', {\n            method: 'POST',\n            cache: 'no-store',\n            headers: { 'Content-Type': 'application/json' },\n            body: JSON.stringify({ username: u }),\n            keepalive: true,\n          }).catch(() => {});\n        } catch (err) { /* ignore */ }\n      }\n      try {''','''    $('#signoutBtn').addEventListener('click', () => {\n      notifyServerSignout();\n      try {''','student logout')
+          j=replace_once(j,'''    document.addEventListener('click', e => {\n      const trigger = e.target.closest('[data-action="openStudentDetail"]');''','''    window.addEventListener('pagehide', () => notifyServerSignout(), { capture: true });\n\n    document.addEventListener('click', e => {\n      const trigger = e.target.closest('[data-action="openStudentDetail"]');''','student pagehide')
+          q.write_text(j,encoding='utf-8')
+
+          q=root/"Teacher's/js/app.js"; t=q.read_text(encoding='utf-8')
+          def TR(old,new,label):
+              global t
+              n=t.count(old)
+              if n!=1: raise SystemExit(f'{label}: {n} matches')
+              t=t.replace(old,new,1)
+          TR('''          const active  = Array.isArray(data && data.active)  ? data.active  : [];\n          const archive = Array.isArray(data && data.archive) ? data.archive : [];''','''          const activeRaw = Array.isArray(data && data.active) ? data.active : [];\n          const active = activeRaw.filter(row => !row || !row.archived);\n          const archive = Array.isArray(data && data.archive) ? data.archive : [];''','teacher archive filter')
+          TR('''    openDailyChallenge() {\n      update(s => {''','''    openDailyChallenge() {\n      const alreadyLive = Array.isArray(state.content && state.content.active) && state.content.active.some(item => item && item.kind === 'daily-challenge' && !item.archived);\n      if (alreadyLive) {\n        update(s => { s.snackbar = { id: Date.now(), message: 'Archive the current Daily Challenge before setting another one.' }; });\n        return;\n      }\n      update(s => {''','teacher daily guard')
+          q.write_text(t,encoding='utf-8')
+
+          q=root/"Teacher's/index.html"; h=q.read_text(encoding='utf-8')
+          for old,new in [
+            ('Live contents for your students','Live content for your students'),
+            ('Create a challenge with the deadline you wish.','Create a challenge with a deadline you choose.'),
+            ('A 24-hour prompt, auto-expires tomorrow','A 24-hour challenge that automatically expires tomorrow.'),
+            ('Send an announcement to your students, no replies. Notifications archive when seen by all','Send an announcement to your students with no replies. Notifications archive when everyone has seen them.'),
+            ('Students can reply with text and an audio clip','Students can reply with text or an audio recording.'),
+            ('A 24-hour prompt that auto-expires at midnight tomorrow.','A 24-hour challenge that automatically expires at midnight tomorrow.'),
+            ('A one-way message that auto-archives as soon as every student has viewed it.','A one-way announcement that automatically archives when every student has viewed it.'),
+            ('Each reply can include text, media, or both. Students must provide at least one of the two.','Each reply can include text, media, or both. Students must provide at least one.'),
+          ]:
+            if old not in h: raise SystemExit('wording target not found: '+old)
+            h=h.replace(old,new)
+          q.write_text(h,encoding='utf-8')
+
+          subprocess.run(['python','-m','py_compile',str(server)],check=True)
+          subprocess.run(['node','--check',str(student)],check=True)
+          subprocess.run(['node','--check',str(teacher)],check=True)
+          subprocess.run(['git','config','user.name','github-actions[bot]'],check=True)
+          subprocess.run(['git','config','user.email','41898282+github-actions[bot]@users.noreply.github.com'],check=True)
+          subprocess.run(['git','add','server/server.py','Student/js/app.js',"Teacher's/js/app.js","Teacher's/index.html"],check=True)
+          subprocess.run(['git','commit','-m','feat: enforce content lifecycle and archive rules'],check=True)
+          subprocess.run(['git','push','origin','HEAD:main'],check=True)
